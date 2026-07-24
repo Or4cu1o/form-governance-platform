@@ -18,6 +18,7 @@
 - Commit ao final de cada task (conforme já pedido pelo usuário). Push somente ao final da última task.
 - Cobertura de teste ≥ 80% nos arquivos novos, seguindo o estilo de teste já usado no projeto: mock manual do Prisma (`{ model: { method: jest.fn() } } as unknown as PrismaService`), instanciação direta do serviço/controller via `new Service(...)` (sem `Test.createTestingModule`).
 - Spec de referência aprovado: `docs/superpowers/specs/2026-07-23-ldap-por-unidade-design.md`.
+- **Baseline conhecido (pré-existente, não relacionado a LDAP):** `npx jest` no HEAD antes da Task 1 já falha em `src/lifecycle/report-lifecycle.service.spec.ts` e `src/users/users.service.spec.ts` (2 suites, 5 testes) — bugs antigos alheios a este plano (o `users.service.spec.ts` é corrigido de passagem na Task 12, já que essa task mexe exatamente no método afetado; `report-lifecycle.service.spec.ts` fica fora de escopo). Nenhum subagente deve tentar "consertar" `report-lifecycle.service.spec.ts` — é ruído de baseline, não uma regressão introduzida por esta feature.
 
 ---
 
@@ -1984,7 +1985,7 @@ git commit -m "feat(ldap): adiciona CRUD de mapeamento grupo do AD -> cargo"
 **Files:**
 - Modify: `apps/api/src/notifications/email-templates.util.ts`
 - Modify: `apps/api/src/notifications/notifications.service.ts`
-- Test: `apps/api/src/notifications/notifications.service.spec.ts`
+- Modify: `apps/api/src/notifications/notifications.service.spec.ts` (já existe — adicionar bloco, não substituir)
 - Create: `apps/api/src/ldap/role-elevation-requests.service.ts`
 - Test: `apps/api/src/ldap/role-elevation-requests.service.spec.ts`
 - Create: `apps/api/src/ldap/role-elevation-requests.controller.ts`
@@ -1996,25 +1997,72 @@ git commit -m "feat(ldap): adiciona CRUD de mapeamento grupo do AD -> cargo"
 
 - [ ] **Step 1: Escrever o teste do template/e-mail (RED)**
 
-Create `apps/api/src/notifications/notifications.service.spec.ts`:
+`apps/api/src/notifications/notifications.service.spec.ts` **já existe** no repositório com 4 testes cobrindo `notifySlaOverdue`, `notifySubmittedForApproval`, `notifyReportReproved` e `notifyReportConcluded` — todos passando no baseline. **Não substitua o arquivo.** Adicione um novo bloco `describe('notifyElevationRequested', ...)` ao final do `describe('NotificationsService', ...)` existente, preservando os 4 testes atuais e o `beforeEach` já presente. O arquivo final deve ficar assim (blocos existentes inalterados, bloco novo ao final):
 
 ```typescript
-import { RoleName } from '@prisma/client';
+import { ReportInstance, RoleName, Unit } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { NotificationsService } from './notifications.service';
-import { PrismaService } from '../prisma/prisma.service';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
   let findManyMock: jest.Mock;
   let sendMock: jest.Mock;
 
+  const unit = { id: 'unit-1', sigla: 'FIL01', nome: 'Filial Um' } as Unit;
+  const report = { id: 'report-1', referenceMonth: new Date('2026-07-01'), slaExtensionDueDate: null } as ReportInstance;
+
   beforeEach(() => {
     findManyMock = jest.fn();
-    sendMock = jest.fn().mockResolvedValue(undefined);
+    sendMock = jest.fn();
     const prisma = { user: { findMany: findManyMock } } as unknown as PrismaService;
     const emailService = { send: sendMock } as unknown as EmailService;
     service = new NotificationsService(prisma, emailService);
+  });
+
+  test('notifySlaOverdue sends only to ELABORADOR of the report unit', async () => {
+    findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
+
+    await service.notifySlaOverdue({ ...report, unit });
+
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { primaryUnitId: unit.id, role: { in: [RoleName.ELABORADOR] }, isActive: true },
+      select: { email: true },
+    });
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: ['elaborador@formops.local'] }));
+  });
+
+  test('notifySubmittedForApproval queries org-wide APROVADOR without unit filter', async () => {
+    findManyMock.mockResolvedValue([{ email: 'aprovador@formops.local' }]);
+
+    await service.notifySubmittedForApproval(report, unit);
+
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { role: { in: [RoleName.APROVADOR] }, isActive: true },
+      select: { email: true },
+    });
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: ['aprovador@formops.local'] }));
+  });
+
+  test('notifyReportReproved sends to both ELABORADOR and REVISOR of the unit', async () => {
+    findManyMock.mockResolvedValue([{ email: 'a@formops.local' }, { email: 'b@formops.local' }]);
+
+    await service.notifyReportReproved(report, unit);
+
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { primaryUnitId: unit.id, role: { in: [RoleName.ELABORADOR, RoleName.REVISOR] }, isActive: true },
+      select: { email: true },
+    });
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: ['a@formops.local', 'b@formops.local'] }));
+  });
+
+  test('does not call EmailService.send with an empty recipient list resolved upstream', async () => {
+    findManyMock.mockResolvedValue([]);
+
+    await service.notifyReportConcluded(report, unit);
+
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: [] }));
   });
 
   describe('notifyElevationRequested', () => {
@@ -2048,7 +2096,7 @@ describe('NotificationsService', () => {
 - [ ] **Step 2: Rodar e confirmar falha**
 
 Run: `cd apps/api && npx jest notifications.service.spec.ts`
-Expected: FAIL — `notifyElevationRequested` não existe.
+Expected: FAIL apenas no novo bloco `notifyElevationRequested` (`notifyElevationRequested` não existe) — os 4 testes preexistentes continuam passando.
 
 - [ ] **Step 3: Adicionar o template de e-mail**
 
@@ -2941,7 +2989,7 @@ git commit -m "feat(ldap): adiciona LdapAuthService (orquestra bootstrap, provis
 **Files:**
 - Modify: `apps/api/src/auth/dto/login.dto.ts`
 - Modify: `apps/api/src/users/users.service.ts`
-- Test: `apps/api/src/users/users.service.spec.ts` (criar)
+- Modify: `apps/api/src/users/users.service.spec.ts` (já existe e está com bug pré-existente — corrigir e estender, não recriar do zero)
 - Modify: `apps/api/src/auth/auth.service.ts`
 - Modify: `apps/api/src/auth/auth.service.spec.ts`
 - Modify: `apps/api/src/auth/auth.controller.ts`
@@ -2976,7 +3024,7 @@ export class LoginDto {
 
 - [ ] **Step 2: Estender `UsersService.findActiveByIdentifier` para também casar por `ldapUsername` — teste primeiro (RED)**
 
-Create `apps/api/src/users/users.service.spec.ts`:
+`apps/api/src/users/users.service.spec.ts` **já existe**, mas está desatualizado em relação à implementação real: `UsersService.findActiveByIdentifier`/`.findActiveById` já fazem `include: { primaryUnit: {...} }` (ver `apps/api/src/users/users.service.ts`), mas os dois testes atuais não esperam esse `include` — por isso ambos já falham no baseline, antes de qualquer mudança de LDAP. Substitua o conteúdo do arquivo por esta versão, que corrige o `include` faltante nos dois testes existentes e estende o primeiro para cobrir `ldapUsername`:
 
 ```typescript
 import { PrismaService } from '../prisma/prisma.service';
@@ -2992,18 +3040,21 @@ describe('UsersService', () => {
     service = new UsersService(prisma);
   });
 
-  describe('findActiveByIdentifier', () => {
-    test('matches by matricula, email or ldapUsername', async () => {
-      await service.findActiveByIdentifier('jsilva');
+  test('findActiveByIdentifier matches by matricula, email or ldapUsername, scoped to active users only', async () => {
+    await service.findActiveByIdentifier('jsilva');
 
-      expect(findFirstMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            isActive: true,
-            OR: [{ matricula: 'jsilva' }, { email: 'jsilva' }, { ldapUsername: 'jsilva' }],
-          },
-        }),
-      );
+    expect(findFirstMock).toHaveBeenCalledWith({
+      where: { isActive: true, OR: [{ matricula: 'jsilva' }, { email: 'jsilva' }, { ldapUsername: 'jsilva' }] },
+      include: { primaryUnit: { select: { id: true, sigla: true, nome: true } } },
+    });
+  });
+
+  test('findActiveById matches by id, scoped to active users only', async () => {
+    await service.findActiveById('user-1');
+
+    expect(findFirstMock).toHaveBeenCalledWith({
+      where: { id: 'user-1', isActive: true },
+      include: { primaryUnit: { select: { id: true, sigla: true, nome: true } } },
     });
   });
 });
@@ -3012,7 +3063,7 @@ describe('UsersService', () => {
 - [ ] **Step 3: Rodar e confirmar falha**
 
 Run: `cd apps/api && npx jest users.service.spec.ts`
-Expected: FAIL — o `OR` atual não inclui `ldapUsername`.
+Expected: `findActiveById` PASSA (a implementação já faz o `include`, só o teste estava desatualizado). `findActiveByIdentifier` FALHA — o `OR` real ainda não inclui `ldapUsername`. Se `findActiveById` também falhar, a implementação mudou além do esperado — pare e reporte.
 
 - [ ] **Step 4: Implementar**
 
@@ -3489,7 +3540,7 @@ export class AppModule {}
 - [ ] **Step 2: Rodar a suíte completa do backend**
 
 Run: `cd apps/api && npm test`
-Expected: PASS em todos os testes (novos e existentes — nenhuma regressão nos módulos que dependiam de `AuthService`/`UsersService`).
+Expected: PASS em todos os testes novos e nos que já passavam no baseline (nenhuma regressão nos módulos que dependiam de `AuthService`/`UsersService`). Exceção conhecida, fora de escopo: `src/lifecycle/report-lifecycle.service.spec.ts` já falhava antes da Task 1 (ver Global Constraints) e continua falhando — não é uma regressão desta feature.
 
 - [ ] **Step 3: Rodar a cobertura e validar ≥ 80% nos arquivos novos**
 
