@@ -27,8 +27,9 @@ export function ReportsPage() {
       queryClient.invalidateQueries({ queryKey: ['my-report-instances'] });
       navigate(`/relatorios/${newReport.id}`);
     },
-    onError: () => {
-      showToast('Não foi possível iniciar o relatório do mês atual.', 'error');
+    onError: (err: any) => {
+      const msg = err?.message || 'Não foi possível iniciar o relatório do mês atual.';
+      showToast(msg, 'error');
     },
   });
 
@@ -63,6 +64,14 @@ export function ReportsPage() {
 
   const scoreTrend = useMemo(() => buildLastSixMonthsScoreTrend(reports), [reports]);
 
+  const handleStartElaboration = () => {
+    if (actionableReport) {
+      navigate(`/relatorios/${actionableReport.id}`);
+      return;
+    }
+    startMutation.mutate();
+  };
+
   return (
     <>
       <PageHeader
@@ -73,7 +82,7 @@ export function ReportsPage() {
           user?.role === 'ELABORADOR' || user?.role === 'ADMINISTRADOR' ? (
             <Button
               isLoading={startMutation.isPending}
-              onClick={() => startMutation.mutate()}
+              onClick={handleStartElaboration}
             >
               <Plus className="mr-1.5 h-4 w-4" />
               Iniciar elaboração
