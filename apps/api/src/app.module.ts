@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
+import { LdapModule } from './ldap/ldap.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { CommonModule } from './common/common.module';
@@ -33,6 +34,7 @@ import { ValidationModule } from './validation/validation.module';
     UsersModule,
     AuthModule,
     AdminModule,
+    LdapModule,
     FormsModule,
     LifecycleModule,
     ReportsModule,
