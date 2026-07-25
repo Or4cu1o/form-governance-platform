@@ -33,7 +33,7 @@ describe('ReportsPage', () => {
     renderReports();
 
     expect(await screen.findByText(/aguarda sua ação/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Iniciar elaboração' })).toHaveAttribute('href', '/relatorios/report-1');
+    expect(screen.getAllByRole('link', { name: /Iniciar elaboração/i })[0]).toHaveAttribute('href', '/relatorios/report-1');
   });
 
   it('does not show the actionable banner when no report matches the user role and status', async () => {

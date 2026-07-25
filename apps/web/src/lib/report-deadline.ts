@@ -13,10 +13,12 @@ export function getRelevantDeadline(report: ReportInstance): { label: string; va
       };
     }
     case 'EM_REVISAO': {
+      const isExtended = Boolean(report.slaExtensionDueDate);
       const dueDate = report.slaExtensionDueDate || report.reviewDueDate;
       const isOverdue = new Date(dueDate) < now;
+      const baseLabel = isExtended ? 'Prazo prorrogado' : 'Prazo de revisão';
       return {
-        label: isOverdue ? 'Prazo de revisão (Atrasado)' : 'Prazo de revisão (A prazo)',
+        label: isOverdue ? `${baseLabel} (Atrasado)` : `${baseLabel} (A prazo)`,
         value: formatDateTime(dueDate),
         isOverdue,
       };

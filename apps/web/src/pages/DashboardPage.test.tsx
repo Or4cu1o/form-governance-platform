@@ -21,7 +21,7 @@ describe('DashboardPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders report rows from every unit, with no drill-down or export actions', async () => {
+  it('renders report rows from every unit with action and export buttons', async () => {
     vi.mocked(reportsApi.getReportInstancesOverview).mockResolvedValueOnce([
       makeReportInstanceOverview({ unit: { id: 'unit-1', sigla: 'TI', nome: 'Tecnologia da Informação' } }),
       makeReportInstanceOverview({
@@ -38,8 +38,8 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('Tecnologia da Informação')).toBeInTheDocument();
     expect(screen.getByText('Centro de Reabilitação')).toBeInTheDocument();
     expect(screen.getByText(/8,5/)).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Ver' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /CSV/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Visualizar/i })[0]).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /CSV/i })[0]).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no reports', async () => {
@@ -58,6 +58,6 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     await screen.findByText('Tecnologia da Informação');
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.getAllByText('—')[0]).toBeInTheDocument();
   });
 });
