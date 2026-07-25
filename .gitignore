@@ -37,3 +37,6 @@ gan-harness/
 
 # Git worktrees usados para desenvolvimento isolado (superpowers:using-git-worktrees)
 .worktrees/
+
+# Ledger de progresso do subagent-driven-development (scratch local, nao versionado)
+.superpowers/
