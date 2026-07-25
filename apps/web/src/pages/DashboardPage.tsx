@@ -304,33 +304,33 @@ export function DashboardPage() {
                       <Button
                         size="sm"
                         variant="secondary"
+                        onClick={() => showToast('Exportação em PDF será disponibilizada em breve.', 'info')}
+                        title="Exportar dados em formato PDF"
+                      >
+                        <FileText className="mr-1 h-3.5 w-3.5 text-rose-600" />
+                        PDF
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="secondary"
                         isLoading={exportingId === `${report.id}-csv`}
                         onClick={() => handleExport(report.id, 'csv')}
                         title="Exportar dados em formato CSV"
                       >
-                        <FileSpreadsheet className="mr-1 h-3.5 w-3.5 text-accent" />
+                        <FileSpreadsheet className="mr-1 h-3.5 w-3.5 text-emerald-600" />
                         CSV
                       </Button>
 
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant="secondary"
                         isLoading={exportingId === `${report.id}-json`}
                         onClick={() => handleExport(report.id, 'json')}
                         title="Exportar dados em formato JSON"
                       >
-                        <FileJson className="mr-1 h-3.5 w-3.5 text-ink-muted" />
+                        <FileJson className="mr-1 h-3.5 w-3.5 text-amber-600" />
                         JSON
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => showToast('Exportação em PDF será disponibilizada em breve.', 'info')}
-                        title="Exportar dados em formato PDF"
-                      >
-                        <FileText className="mr-1 h-3.5 w-3.5 text-rose-500" />
-                        PDF
                       </Button>
                     </div>
                   </TD>
