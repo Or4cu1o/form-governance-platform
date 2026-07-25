@@ -1,11 +1,13 @@
 import { RoleName } from '@prisma/client';
-import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { LdapAuthService } from '../ldap/ldap-auth.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
-  let validateCredentialsMock: jest.Mock;
+  let authenticateMock: jest.Mock;
   let loginMock: jest.Mock;
+  let listBootstrapUnitsMock: jest.Mock;
 
   const user = {
     id: 'user-1',
@@ -18,18 +20,31 @@ describe('AuthController', () => {
   };
 
   beforeEach(() => {
-    validateCredentialsMock = jest.fn().mockResolvedValue(user);
-    loginMock = jest.fn().mockReturnValue({ accessToken: 'signed-jwt', user });
-    const authService = { validateCredentials: validateCredentialsMock, login: loginMock } as unknown as AuthService;
-    controller = new AuthController(authService);
+    authenticateMock = jest.fn().mockResolvedValue(user);
+    loginMock = jest.fn().mockReturnValue({ accessToken: 'token', user });
+    listBootstrapUnitsMock = jest.fn().mockResolvedValue([{ id: 'unit-1', sigla: 'MTZ', nome: 'Matriz' }]);
+
+    const authService = { authenticate: authenticateMock, login: loginMock } as unknown as AuthService;
+    const ldapAuthService = { listBootstrapUnits: listBootstrapUnitsMock } as unknown as LdapAuthService;
+
+    controller = new AuthController(authService, ldapAuthService);
   });
 
-  test('login validates credentials and returns the signed JWT', async () => {
-    const result = await controller.login({ identifier: '10001', password: 'senha-forte' });
+  test('login authenticates then signs the JWT', async () => {
+    const dto = { identifier: '10001', password: 'senha' };
 
-    expect(validateCredentialsMock).toHaveBeenCalledWith('10001', 'senha-forte');
+    const result = await controller.login(dto);
+
+    expect(authenticateMock).toHaveBeenCalledWith(dto);
     expect(loginMock).toHaveBeenCalledWith(user);
-    expect(result).toEqual({ accessToken: 'signed-jwt', user });
+    expect(result).toEqual({ accessToken: 'token', user });
+  });
+
+  test('ldapUnits delegates to LdapAuthService.listBootstrapUnits', async () => {
+    const result = await controller.ldapUnits();
+
+    expect(listBootstrapUnitsMock).toHaveBeenCalled();
+    expect(result).toEqual([{ id: 'unit-1', sigla: 'MTZ', nome: 'Matriz' }]);
   });
 
   test('me returns the currently authenticated user unchanged', () => {

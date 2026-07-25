@@ -11,17 +11,21 @@ describe('UsersService', () => {
     service = new UsersService(prisma);
   });
 
-  test('findActiveByIdentifier matches by matricula or email, scoped to active users only', async () => {
-    await service.findActiveByIdentifier('10001');
+  test('findActiveByIdentifier matches by matricula, email or ldapUsername, scoped to active users only', async () => {
+    await service.findActiveByIdentifier('jsilva');
 
     expect(findFirstMock).toHaveBeenCalledWith({
-      where: { isActive: true, OR: [{ matricula: '10001' }, { email: '10001' }] },
+      where: { isActive: true, OR: [{ matricula: 'jsilva' }, { email: 'jsilva' }, { ldapUsername: 'jsilva' }] },
+      include: { primaryUnit: { select: { id: true, sigla: true, nome: true } } },
     });
   });
 
   test('findActiveById matches by id, scoped to active users only', async () => {
     await service.findActiveById('user-1');
 
-    expect(findFirstMock).toHaveBeenCalledWith({ where: { id: 'user-1', isActive: true } });
+    expect(findFirstMock).toHaveBeenCalledWith({
+      where: { id: 'user-1', isActive: true },
+      include: { primaryUnit: { select: { id: true, sigla: true, nome: true } } },
+    });
   });
 });

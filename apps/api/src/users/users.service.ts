@@ -9,7 +9,7 @@ export class UsersService {
     return this.prisma.user.findFirst({
       where: {
         isActive: true,
-        OR: [{ matricula: identifier }, { email: identifier }],
+        OR: [{ matricula: identifier }, { email: identifier }, { ldapUsername: identifier }],
       },
       include: {
         primaryUnit: {
