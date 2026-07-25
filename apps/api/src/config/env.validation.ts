@@ -4,6 +4,7 @@ const REQUIRED_ENV_VARS = [
   'INITIAL_ADMIN_MATRICULA',
   'INITIAL_ADMIN_EMAIL',
   'INITIAL_ADMIN_PASSWORD',
+  'LDAP_CONFIG_ENCRYPTION_KEY',
 ] as const;
 
 // Falha rapido na inicializacao se algum segredo/config obrigatorio nao
