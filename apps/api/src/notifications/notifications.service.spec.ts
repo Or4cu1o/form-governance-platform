@@ -62,4 +62,30 @@ describe('NotificationsService', () => {
 
     expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: [] }));
   });
+
+  describe('notifyElevationRequested', () => {
+    test('sends the elevation email to every active ADMINISTRADOR', async () => {
+      findManyMock.mockResolvedValue([{ email: 'admin1@empresa.local' }, { email: 'admin2@empresa.local' }]);
+
+      await service.notifyElevationRequested(
+        { nome: 'Joao', sobrenome: 'Silva', matricula: '12345' },
+        RoleName.ADMINISTRADOR,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { role: { in: [RoleName.ADMINISTRADOR] }, isActive: true } }),
+      );
+      expect(sendMock).toHaveBeenCalledWith(
+        expect.objectContaining({ to: ['admin1@empresa.local', 'admin2@empresa.local'] }),
+      );
+    });
+
+    test('does not call EmailService.send when there are no administrators', async () => {
+      findManyMock.mockResolvedValue([]);
+
+      await service.notifyElevationRequested({ nome: 'Joao', sobrenome: 'Silva', matricula: '12345' }, RoleName.APROVADOR);
+
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+  });
 });

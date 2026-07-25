@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ReportInstance, RoleName, Unit } from '@prisma/client';
+import { ReportInstance, RoleName, Unit, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  buildElevationRequestedEmail,
   buildReportConcludedEmail,
   buildReportReprovedEmail,
   buildSlaOverdueEmail,
@@ -49,6 +50,17 @@ export class NotificationsService {
   async notifyReportConcluded(report: ReportInstance, unit: Unit): Promise<void> {
     const to = await this.findUnitRoleEmails(unit.id, [RoleName.ELABORADOR, RoleName.REVISOR]);
     await this.emailService.send({ to, ...buildReportConcludedEmail(report, unit) });
+  }
+
+  async notifyElevationRequested(
+    user: Pick<User, 'nome' | 'sobrenome' | 'matricula'>,
+    requestedRole: RoleName,
+  ): Promise<void> {
+    const to = await this.findOrgWideRoleEmails([RoleName.ADMINISTRADOR]);
+    if (to.length === 0) {
+      return;
+    }
+    await this.emailService.send({ to, ...buildElevationRequestedEmail(user, requestedRole) });
   }
 
   private async findUnitRoleEmails(unitId: string, roles: RoleName[]): Promise<string[]> {

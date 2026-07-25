@@ -1,4 +1,4 @@
-import { ReportInstance, Unit } from '@prisma/client';
+import { ReportInstance, RoleName, Unit } from '@prisma/client';
 
 export interface EmailContent {
   subject: string;
@@ -87,6 +87,19 @@ export function buildReportConcludedEmail(report: ReportInstance, unit: Unit): E
     html: wrapHtml('Relatorio aprovado', [
       `O relatorio da unidade <strong>${unitLabel(unit)}</strong> referente a ${periodoLabel(report.referenceMonth)} foi aprovado pela Mesa de Validacao Tecnica.`,
       'Nenhuma acao adicional e necessaria.',
+    ]),
+  };
+}
+
+export function buildElevationRequestedEmail(
+  user: { nome: string; sobrenome: string; matricula: string },
+  requestedRole: RoleName,
+): EmailContent {
+  return {
+    subject: '[FormOps] Solicitacao de elevacao de cargo pendente',
+    html: wrapHtml('Nova solicitacao de elevacao de cargo', [
+      `O usuario <strong>${escapeHtml(user.nome)} ${escapeHtml(user.sobrenome)}</strong> (matricula ${escapeHtml(user.matricula)}) foi identificado em um grupo do AD mapeado para <strong>${requestedRole}</strong>.`,
+      'Acesse a fila de solicitacoes de elevacao no FormOps para aprovar ou rejeitar.',
     ]),
   };
 }
