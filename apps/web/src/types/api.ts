@@ -204,6 +204,9 @@ export interface ReportInstanceOverview {
   referenceMonth: string;
   status: ReportStatus;
   totalScore: string | null;
+  elaborationDueDate?: string;
+  reviewDueDate?: string;
+  approvalDueDate?: string;
   isElaborationOnTime: boolean | null;
   isReviewOnTime: boolean | null;
   unit: UnitSummary;

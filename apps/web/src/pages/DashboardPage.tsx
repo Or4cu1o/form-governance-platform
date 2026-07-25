@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Eye, FileJson, FileSpreadsheet, FileText } from 'lu
 import { PageHeader } from '../components/layout/PageHeader';
 import { getReportInstancesOverview } from '../api/reports';
 import { exportReportInstance } from '../api/export';
-import { formatNumber, formatReferenceMonth } from '../lib/format';
+import { formatDateTime, formatNumber, formatReferenceMonth } from '../lib/format';
 import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE } from '../lib/status';
 import { cn } from '../lib/cn';
 import { Button, EmptyState, Input, Select, Spinner, StatusBadge, Table, TBody, TD, TH, THead, TR, useToast } from '../components/ui';
@@ -95,6 +95,36 @@ function ScoreCell({ totalScore }: { totalScore: string | null }) {
     <span className={cn('data-figure font-semibold', tone)}>
       {formatNumber(totalScore)} <span className="font-normal text-ink-faint">/ 10</span>
     </span>
+  );
+}
+
+function SlaStatusCell({ report }: { report: ReportInstanceOverview }) {
+  if (report.status === 'CONCLUIDO') {
+    return <span className="text-xs font-medium text-emerald-600">Concluído</span>;
+  }
+
+  const dueDateStr =
+    report.status === 'PENDENTE'
+      ? report.elaborationDueDate
+      : report.status === 'EM_REVISAO'
+      ? report.reviewDueDate
+      : report.approvalDueDate;
+
+  if (!dueDateStr) {
+    return <span className="text-ink-faint">—</span>;
+  }
+
+  const dueDate = new Date(dueDateStr);
+  const now = new Date();
+  const isOverdue = dueDate < now;
+
+  return (
+    <div className="flex flex-col">
+      <span className={cn('text-xs font-semibold', isOverdue ? 'text-rose-600' : 'text-emerald-600')}>
+        {isOverdue ? 'Atrasado' : 'A prazo'}
+      </span>
+      <span className="data-figure text-[11px] text-ink-faint">{formatDateTime(dueDateStr)}</span>
+    </div>
   );
 }
 
@@ -274,6 +304,7 @@ export function DashboardPage() {
                 <TH>
                   <SortableHeader label="Status" column="status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 </TH>
+                <TH>Prazo (SLA)</TH>
                 <TH>Nota</TH>
                 <TH className="text-right">Ações & Exportação</TH>
               </TR>
@@ -288,6 +319,9 @@ export function DashboardPage() {
                   <TD className="data-figure">{formatReferenceMonth(report.referenceMonth)}</TD>
                   <TD>
                     <StatusBadge tone={REPORT_STATUS_TONE[report.status]} label={REPORT_STATUS_LABEL[report.status]} />
+                  </TD>
+                  <TD>
+                    <SlaStatusCell report={report} />
                   </TD>
                   <TD>
                     <ScoreCell totalScore={report.totalScore} />

@@ -40,10 +40,29 @@ export class ReportInstancesService {
     return report;
   }
 
+  async ensureCurrentPeriodOpenForAllActiveUnits() {
+    try {
+      const now = new Date();
+      const currentMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+      const units = await this.prisma.unit.findMany({
+        where: { isActive: true, formTemplateId: { not: null } },
+      });
+
+      for (const unit of units) {
+        await this.reportLifecycleService.openPeriodForUnit(unit, currentMonth);
+      }
+    } catch {
+      // Silenciosamente tolera falhas concorrentes
+    }
+  }
+
   // Painel Central (Secao 5 do PROMPT.md): filtros por unidade, periodo,
   // status, busca global por sigla/nome da unidade, e ordenacao por
   // periodo de referencia ou status.
   async findAllForUser(user: AuthenticatedUser, query: ListReportInstancesQueryDto = {}) {
+    await this.ensureCurrentPeriodOpenForAllActiveUnits();
+
     const scopeWhere: Prisma.ReportInstanceWhereInput = this.unitAccessService.hasOrgWideReadAccess(user)
       ? {}
       : { unitId: { in: await this.unitAccessService.getAccessibleUnitIds(user) } };
@@ -76,6 +95,8 @@ export class ReportInstancesService {
   // acesso ao detalhe do relatorio, que continua protegido por
   // findOneForUser/assertReadAccess). Nao inclui indicatorResponses.
   async findOverviewForAllUnits(query: ListReportInstancesQueryDto = {}) {
+    await this.ensureCurrentPeriodOpenForAllActiveUnits();
+
     const { unitId, status, referenceMonthFrom, referenceMonthTo, search, sortBy, sortOrder } = query;
     const where: Prisma.ReportInstanceWhereInput = {
       ...(unitId && { unitId }),
@@ -99,6 +120,9 @@ export class ReportInstancesService {
         referenceMonth: true,
         status: true,
         totalScore: true,
+        elaborationDueDate: true,
+        reviewDueDate: true,
+        approvalDueDate: true,
         isElaborationOnTime: true,
         isReviewOnTime: true,
         unit: { select: { id: true, sigla: true, nome: true } },
