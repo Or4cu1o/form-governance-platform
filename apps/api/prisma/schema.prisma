@@ -73,6 +73,22 @@ enum AuditAction {
   @@map("audit_action")
 }
 
+enum AuthSource {
+  LOCAL
+  LDAP
+
+  @@map("auth_source")
+}
+
+enum ElevationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+
+  @@map("elevation_status")
+}
+
 // ---------------------------------------------------------------------------
 // RBAC / Identidade e Unidades (Secao 3)
 // ---------------------------------------------------------------------------
@@ -85,6 +101,7 @@ model Unit {
   level          UnitLevel
   formTemplateId String?   @map("form_template_id")
   isActive       Boolean   @default(true) @map("is_active")
+  ldapEnabled    Boolean   @default(false) @map("ldap_enabled")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -92,30 +109,38 @@ model Unit {
   primaryUsers    User[]           @relation("PrimaryUnit")
   unitAccesses    UserUnitAccess[]
   reportInstances ReportInstance[]
+  ldapConfigs     LdapConfig[]
 
   @@map("units")
 }
 
 model User {
-  id            String   @id @default(uuid())
-  matricula     String   @unique
+  id            String     @id @default(uuid())
+  matricula     String     @unique
   nome          String
   sobrenome     String
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
+  email         String     @unique
+  passwordHash  String?    @map("password_hash")
   role          RoleName
-  primaryUnitId String   @map("primary_unit_id")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  primaryUnitId String     @map("primary_unit_id")
+  isActive      Boolean    @default(true) @map("is_active")
+  authSource    AuthSource @default(LOCAL) @map("auth_source")
+  ldapConfigId  String?    @map("ldap_config_id")
+  ldapUsername  String?    @map("ldap_username")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  primaryUnit       Unit                @relation("PrimaryUnit", fields: [primaryUnitId], references: [id])
-  unitAccesses      UserUnitAccess[]
-  updatedResponses  IndicatorResponse[] @relation("ResponseUpdatedBy")
-  uploadedEvidences EvidenceFile[]      @relation("EvidenceUploadedBy")
-  validationRecords ValidationRecord[]  @relation("ValidationByAprovador")
-  auditLogs         AuditLog[]          @relation("AuditActor")
+  primaryUnit        Unit                    @relation("PrimaryUnit", fields: [primaryUnitId], references: [id])
+  ldapConfig         LdapConfig?             @relation(fields: [ldapConfigId], references: [id])
+  unitAccesses       UserUnitAccess[]
+  updatedResponses   IndicatorResponse[]     @relation("ResponseUpdatedBy")
+  uploadedEvidences  EvidenceFile[]          @relation("EvidenceUploadedBy")
+  validationRecords  ValidationRecord[]      @relation("ValidationByAprovador")
+  auditLogs          AuditLog[]              @relation("AuditActor")
+  elevationRequests  RoleElevationRequest[]  @relation("ElevationRequests")
+  reviewedElevations RoleElevationRequest[]  @relation("ElevationReviewedBy")
 
+  @@unique([ldapConfigId, ldapUsername])
   @@map("users")
 }
 
@@ -358,4 +383,63 @@ model AuditLog {
 
   @@index([tableName, recordId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Integracao LDAP por Unidade (login via AD, mapeamento de grupo -> cargo)
+// ---------------------------------------------------------------------------
+
+model LdapConfig {
+  id                    String   @id @default(uuid())
+  unitId                String   @map("unit_id")
+  name                  String
+  domain                String   @unique
+  hosts                 String[]
+  port                  Int      @default(636)
+  useTls                Boolean  @default(true) @map("use_tls")
+  bindDn                String   @map("bind_dn")
+  bindPasswordEncrypted String   @map("bind_password_encrypted")
+  baseDn                String   @map("base_dn")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  unit          Unit               @relation(fields: [unitId], references: [id])
+  groupMappings LdapGroupMapping[]
+  users         User[]
+
+  @@index([unitId])
+  @@map("ldap_configs")
+}
+
+model LdapGroupMapping {
+  id           String   @id @default(uuid())
+  ldapConfigId String   @map("ldap_config_id")
+  groupDn      String   @map("group_dn")
+  role         RoleName
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  ldapConfig LdapConfig @relation(fields: [ldapConfigId], references: [id])
+
+  @@unique([ldapConfigId, groupDn, role])
+  @@map("ldap_group_mappings")
+}
+
+model RoleElevationRequest {
+  id            String          @id @default(uuid())
+  userId        String          @map("user_id")
+  requestedRole RoleName        @map("requested_role")
+  status        ElevationStatus @default(PENDING)
+  sourceGroupDn String          @map("source_group_dn")
+  reviewedById  String?         @map("reviewed_by_id")
+  reviewedAt    DateTime?       @map("reviewed_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  user       User  @relation("ElevationRequests", fields: [userId], references: [id])
+  reviewedBy User? @relation("ElevationReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([userId, status])
+  @@map("role_elevation_requests")
 }
