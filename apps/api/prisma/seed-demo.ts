@@ -352,6 +352,17 @@ function generateAnalysisAndPlan(
 async function main() {
   console.log('=== Iniciando Seed da Demonstração (5 Unidades / Jan-Jun 2026 com ~30% Não Conformes) ===');
 
+  // Limpar relatórios de meses posteriores a junho de 2026 (mês 7 em diante)
+  const futureReports = await prisma.reportInstance.findMany({
+    where: { referenceMonth: { gte: new Date(Date.UTC(2026, 6, 1)) } },
+    select: { id: true },
+  });
+  const futureIds = futureReports.map((r) => r.id);
+  if (futureIds.length > 0) {
+    await prisma.indicatorResponse.deleteMany({ where: { reportInstanceId: { in: futureIds } } });
+    await prisma.reportInstance.deleteMany({ where: { id: { in: futureIds } } });
+  }
+
   // 1. Obter os formulários N1 e N3 do banco
   const n1Template = await prisma.formTemplate.findFirst({
     where: { name: { startsWith: 'N1' } },
