@@ -1,39 +1,18 @@
-# Dependencies
-node_modules
-**/node_modules
-
-# Environment
-.env
-**/.env
-
-# Build output
-dist/
-**/dist
+# .gitignore
+.next/
+.turbo/
 build/
-*.tsbuildinfo
-
-# Test coverage
 coverage/
-
-# Runtime / process state
-*.pid
-logs
-**/logs
+dist/
+gan-harness/
+logs/
+node_modules/
+template-forms/
+.DS_Store
+.env*
 *.log
-
-# Saida compilada de scripts que rodam via ts-node (ver apps/api/package.json) —
-# a fonte de verdade e sempre o .ts; nunca deveria existir .js/.js.map aqui.
+*.pid
+*.tsbuildinfo
 apps/api/prisma/**/*.js
 apps/api/prisma/**/*.js.map
-
-# Material de referencia (nao consumido em runtime, so documentacao de proveniencia)
-template-forms/
-
-# Artefatos de processo/design do harness GAN — nao faz parte do produto
-gan-harness/
-
-# OS
-.DS_Store
-
-# Git worktrees usados para desenvolvimento isolado (superpowers:using-git-worktrees)
-.worktrees/
+graphify-out/cost.json

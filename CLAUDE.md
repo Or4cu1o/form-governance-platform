@@ -1,9 +1,18 @@
-## graphify
+# form-governance-platform (formops)
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+Monorepo npm workspaces: `apps/api` (NestJS + Prisma) e `apps/web` (Vite + React + TypeScript).
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+## Comandos
+
+- Build: `npm run build` (roda build de `apps/api` e depois `apps/web`)
+- Test: `npm run test` (Jest em `apps/api`, Vitest em `apps/web`)
+  - Coverage: `npm run test:cov --workspace=apps/api` / `npm run test:cov --workspace=apps/web`
+- Lint: `npm run lint --workspace=apps/api` / `npm run lint --workspace=apps/web` (ESLint em ambos)
+- Dev: `npm run dev:api` (Nest watch) / `npm run dev:web` (Vite)
+- Docker: `npm run docker:up` / `npm run docker:down` (sobe `postgres`, `minio`, `api`, `web` via `docker-compose.yml`)
+
+## Notas do repositório
+
+- `apps/api`: Prisma como ORM (`prisma:generate`, `prisma:migrate:dev`, `prisma:migrate:deploy`), seeds em `prisma/seed*.ts` (`npm run seed:proprietary`, `npm run seed:demo`).
+- Riscos de segurança aceitos e documentados: `apps/api/SECURITY-NOTES.md` e `apps/web/SECURITY-NOTES.md` — checar antes de mexer em envio de e-mail (`nodemailer`), upload (`multer`) ou armazenamento do token JWT (`sessionStorage`).
+- Orquestração de serviços via `scripts/manage.js` (`npm run start|status|restart|stop|down|deploy|deploy:seed`).
