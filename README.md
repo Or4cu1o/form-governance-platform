@@ -4,6 +4,32 @@
 
 Consulte [`docs/PROMPT.md`](./docs/PROMPT.md) para a especificação de requisitos completa que orientou o desenho do produto.
 
+## Índice
+
+- [Requisitos](#requisitos)
+- [Configuração Inicial](#configuração-inicial)
+- [Gerenciamento Rápido via NPM](#-gerenciamento-rápido-via-npm)
+- [Stack](#stack)
+- [Arquitetura](#arquitetura)
+- [Roles e Governança (RBAC)](#roles-e-governança-rbac)
+- [Credenciais Padrão (Desenvolvimento)](#credenciais-padrão-desenvolvimento)
+- [Testes](#testes)
+- [Build de Produção](#build-de-produção)
+- [Contribuindo](#contribuindo)
+- [Licença](#licença)
+
+---
+
+## Requisitos
+
+| Ferramenta | Versão |
+|---|---|
+| Node.js | 22.x |
+| npm | 10.x (incluso no Node 22) |
+| Docker + Docker Compose | necessário para Postgres e MinIO (via `npm start`) |
+
+O projeto é um monorepo gerenciado via [npm workspaces](https://docs.npmjs.com/cli/v10/using-npm/workspaces) (`apps/api`, `apps/web`) — não é necessário instalar dependências em cada workspace separadamente, `npm install` na raiz resolve tudo.
+
 ---
 
 ## ⚡ Gerenciamento Rápido via NPM
@@ -144,6 +170,18 @@ npm run build
 ```
 
 Compila `apps/api` (NestJS → `dist/`) e `apps/web` (Vite → `dist/`, SPA estática). Cabeçalhos de segurança HTTP (CSP, HSTS, etc.) devem ser configurados na camada de hospedagem/reverse proxy — ver [`apps/web/SECURITY-NOTES.md`](./apps/web/SECURITY-NOTES.md#7-cabeçalhos-de-segurança-http-csp-hsts-etc).
+
+---
+
+## Explorando o Código
+
+O repositório mantém um grafo de conhecimento gerado a partir do código-fonte em [`graphify-out/`](./graphify-out/), com mapa de comunidades, nós centrais ("god nodes") e conexões entre módulos. Para uma visão rápida da arquitetura sem navegar arquivo por arquivo, abra [`graphify-out/GRAPH_REPORT.md`](./graphify-out/GRAPH_REPORT.md) ou o grafo interativo [`graphify-out/graph.html`](./graphify-out/graph.html) em um navegador.
+
+---
+
+## Contribuindo
+
+Veja [`CONTRIBUTING.md`](./CONTRIBUTING.md) para o fluxo de branches, padrão de commits, requisitos de testes/lint e checklist de revisão antes de abrir um Pull Request.
 
 ---
 
