@@ -26,6 +26,7 @@ function readRootEnv(): RootEnv {
     const content = readFileSync(new URL('../../.env', import.meta.url), 'utf-8');
     const viteVars: Record<string, string> = {};
     let webPort: number | undefined;
+    let apiPort: string | undefined;
     let enableHttps = false;
     let sslKeyPath: string | undefined;
     let sslCertPath: string | undefined;
@@ -42,6 +43,8 @@ function readRootEnv(): RootEnv {
       if (key === 'WEB_PORT') {
         const n = Number(val);
         if (!isNaN(n)) webPort = n;
+      } else if (key === 'API_PORT') {
+        apiPort = val;
       } else if (key === 'ENABLE_HTTPS') {
         enableHttps = val === 'true';
       } else if (key === 'SSL_KEY_PATH') {
@@ -53,6 +56,10 @@ function readRootEnv(): RootEnv {
       if (key.startsWith('VITE_')) {
         viteVars[key] = val;
       }
+    }
+    // VITE_API_URL e derivada de API_PORT, a menos que ja venha explicita no .env
+    if (!viteVars.VITE_API_URL) {
+      viteVars.VITE_API_URL = `http://localhost:${apiPort ?? 3000}`;
     }
     return { webPort, enableHttps, sslKeyPath, sslCertPath, viteVars };
   } catch {
@@ -84,7 +91,7 @@ export default defineConfig({
   define: defineEnv,
   server: {
     host: true,
-    port: webPort ?? 5173,
+    port: webPort ?? 3001,
     https: httpsConfig,
   },
   preview: {

@@ -44,8 +44,14 @@ function loadEnv() {
   }
 
   process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-  process.env.API_PORT = process.env.API_PORT || '7444';
-  process.env.WEB_PORT = process.env.WEB_PORT || '7443';
+  process.env.API_PORT = process.env.API_PORT || '3000';
+  process.env.WEB_PORT = process.env.WEB_PORT || '3001';
+  process.env.POSTGRES_PORT = process.env.POSTGRES_PORT || '5432';
+  process.env.MINIO_API_PORT = process.env.MINIO_API_PORT || '9000';
+  // VITE_API_URL, DATABASE_URL e S3_ENDPOINT sao derivadas em vez de mantidas separadas, evitando desalinhamento
+  process.env.VITE_API_URL = process.env.VITE_API_URL || `http://localhost:${process.env.API_PORT}`;
+  process.env.DATABASE_URL = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
+  process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || `http://localhost:${process.env.MINIO_API_PORT}`;
 }
 
 loadEnv();

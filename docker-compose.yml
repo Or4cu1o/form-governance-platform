@@ -39,7 +39,6 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       S3_ENDPOINT: http://minio:9000
@@ -60,7 +59,7 @@ services:
     environment:
       VITE_API_URL: http://localhost:${API_PORT:-3000}
     ports:
-      - "${WEB_PORT:-5173}:5173"
+      - "${WEB_PORT:-3001}:3001"
     depends_on:
       - api
 
