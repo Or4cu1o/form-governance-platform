@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Paperclip, UploadCloud, XCircle } from 'lucide-react';
 import { updateIndicatorResponseValues, uploadIndicatorEvidence } from '../../api/indicator-responses';
@@ -31,12 +31,16 @@ export function IndicatorResponseCard({ response, reportInstanceId, isEditable }
   const [draftValues, setDraftValues] = useState<Record<string, string>>(initialValues);
   const [draftCriticalAnalysis, setDraftCriticalAnalysis] = useState<string>(response.criticalAnalysis ?? '');
   const [draftActionPlan, setDraftActionPlan] = useState<string>(response.actionPlan ?? '');
+  const [syncedResponse, setSyncedResponse] = useState(response);
 
-  useEffect(() => {
+  // Ajusta o estado durante o render (padrao recomendado pelo React) em vez
+  // de useEffect com setState sincrono, que dispara um render em cascata.
+  if (response !== syncedResponse) {
+    setSyncedResponse(response);
     setDraftValues(initialValues);
     setDraftCriticalAnalysis(response.criticalAnalysis ?? '');
     setDraftActionPlan(response.actionPlan ?? '');
-  }, [response, initialValues]);
+  }
 
   const isDirty =
     response.snapshotVariableKeys.some((key) => draftValues[key] !== initialValues[key]) ||

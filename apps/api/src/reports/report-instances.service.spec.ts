@@ -96,6 +96,28 @@ describe('ReportInstancesService', () => {
       const callArgs = findManyMock.mock.calls[0][0];
       expect(callArgs.where.unitId).toBeUndefined();
     });
+
+    test('returns an empty list without querying the database when the unitId filter is outside the caller accessible units', async () => {
+      hasOrgWideReadAccessMock.mockReturnValue(false);
+      getAccessibleUnitIdsMock.mockResolvedValue(['unit-1', 'unit-2']);
+
+      const result = await service.findAllForUser(elaborador, { unitId: 'unit-outra-organizacao' });
+
+      expect(result).toEqual([]);
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
+
+    test('applies the requested unitId filter as-is (not widened back to the full scope) when it is within the caller accessible units', async () => {
+      hasOrgWideReadAccessMock.mockReturnValue(false);
+      getAccessibleUnitIdsMock.mockResolvedValue(['unit-1', 'unit-2']);
+      findManyMock.mockResolvedValue([]);
+
+      await service.findAllForUser(elaborador, { unitId: 'unit-2' });
+
+      expect(findManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ unitId: 'unit-2' }) }),
+      );
+    });
   });
 
   describe('findOverviewForAllUnits', () => {

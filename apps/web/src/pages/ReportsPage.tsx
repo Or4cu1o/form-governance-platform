@@ -27,8 +27,8 @@ export function ReportsPage() {
       queryClient.invalidateQueries({ queryKey: ['my-report-instances'] });
       navigate(`/relatorios/${newReport.id}`);
     },
-    onError: (err: any) => {
-      const msg = err?.message || 'Não foi possível iniciar o relatório do mês atual.';
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Não foi possível iniciar o relatório do mês atual.';
       showToast(msg, 'error');
     },
   });

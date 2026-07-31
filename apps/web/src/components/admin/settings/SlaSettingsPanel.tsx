@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getPlatformSettings, updatePlatformSettings } from '../../../api/settings';
 import { Button, Field, Input, useToast } from '../../ui';
+import type { SystemSetting } from '../../../types/api';
 
 export function SlaSettingsPanel() {
   const queryClient = useQueryClient();
@@ -13,16 +14,17 @@ export function SlaSettingsPanel() {
   const [reviewDay, setReviewDay] = useState('');
   const [approvalDay, setApprovalDay] = useState('');
   const [reprovalExtensionDays, setReprovalExtensionDays] = useState('');
+  const [syncedSettings, setSyncedSettings] = useState<SystemSetting | undefined>(undefined);
 
-  useEffect(() => {
-    if (!settings) {
-      return;
-    }
+  // Ajusta o estado durante o render (padrao recomendado pelo React) em vez
+  // de useEffect com setState sincrono, que dispara um render em cascata.
+  if (settings && settings !== syncedSettings) {
+    setSyncedSettings(settings);
     setElaborationDay(String(settings.slaElaborationBusinessDay));
     setReviewDay(String(settings.slaReviewBusinessDay));
     setApprovalDay(String(settings.slaApprovalBusinessDay));
     setReprovalExtensionDays(String(settings.slaReprovalExtensionDays));
-  }, [settings]);
+  }
 
   const mutation = useMutation({
     mutationFn: () =>

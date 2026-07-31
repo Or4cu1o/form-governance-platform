@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getPlatformSettings, updatePlatformSettings } from '../../../api/settings';
 import { Button, Field, Input, useToast } from '../../ui';
+import type { SystemSetting } from '../../../types/api';
 
 export function ScoreSettingsPanel() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { data: settings } = useQuery({ queryKey: ['platform-settings'], queryFn: getPlatformSettings });
   const [deflatorScore, setDeflatorScore] = useState('');
+  const [syncedSettings, setSyncedSettings] = useState<SystemSetting | undefined>(undefined);
 
-  useEffect(() => {
-    if (!settings) {
-      return;
-    }
+  // Ajusta o estado durante o render (padrao recomendado pelo React) em vez
+  // de useEffect com setState sincrono, que dispara um render em cascata.
+  if (settings && settings !== syncedSettings) {
+    setSyncedSettings(settings);
     setDeflatorScore(String(settings.slaDeflatorScore));
-  }, [settings]);
+  }
 
   const mutation = useMutation({
     mutationFn: () => updatePlatformSettings({ slaDeflatorScore: Number(deflatorScore) }),

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, Prisma, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -9,6 +9,8 @@ import { ListReportInstancesQueryDto } from './dto/list-report-instances-query.d
 
 @Injectable()
 export class ReportInstancesService {
+  private readonly logger = new Logger(ReportInstancesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly unitAccessService: UnitAccessService,
@@ -52,8 +54,11 @@ export class ReportInstancesService {
       for (const unit of units) {
         await this.reportLifecycleService.openPeriodForUnit(unit, currentMonth);
       }
-    } catch {
-      // Silenciosamente tolera falhas concorrentes
+    } catch (error) {
+      // Tolera falhas concorrentes (ex.: duas requisicoes tentando abrir o
+      // mesmo periodo ao mesmo tempo), mas registra qualquer outra falha
+      // para nao mascarar problemas reais (banco fora do ar, bug de SLA).
+      this.logger.warn('Falha ao garantir abertura do periodo corrente para as unidades ativas', error);
     }
   }
 
@@ -63,14 +68,20 @@ export class ReportInstancesService {
   async findAllForUser(user: AuthenticatedUser, query: ListReportInstancesQueryDto = {}) {
     await this.ensureCurrentPeriodOpenForAllActiveUnits();
 
-    const scopeWhere: Prisma.ReportInstanceWhereInput = this.unitAccessService.hasOrgWideReadAccess(user)
-      ? {}
-      : { unitId: { in: await this.unitAccessService.getAccessibleUnitIds(user) } };
+    const hasOrgWideAccess = this.unitAccessService.hasOrgWideReadAccess(user);
+    const accessibleUnitIds = hasOrgWideAccess ? null : await this.unitAccessService.getAccessibleUnitIds(user);
 
     const { unitId, status, referenceMonthFrom, referenceMonthTo, search, sortBy, sortOrder } = query;
+
+    // O filtro de unitId da query nunca pode ALARGAR o escopo do usuario: se
+    // ele pedir uma unidade fora do seu acesso, o resultado e vazio, nao a
+    // lista sem filtro (ver bypass corrigido nesta revisao).
+    if (unitId && accessibleUnitIds && !accessibleUnitIds.includes(unitId)) {
+      return [];
+    }
+
     const where: Prisma.ReportInstanceWhereInput = {
-      ...scopeWhere,
-      ...(unitId && { unitId }),
+      ...(unitId ? { unitId } : accessibleUnitIds ? { unitId: { in: accessibleUnitIds } } : {}),
       ...(status && { status }),
       ...((referenceMonthFrom || referenceMonthTo) && {
         referenceMonth: {

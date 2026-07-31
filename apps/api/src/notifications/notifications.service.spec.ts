@@ -62,4 +62,11 @@ describe('NotificationsService', () => {
 
     expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: [] }));
   });
+
+  test('does not throw when EmailService.send rejects (SMTP failure must not fail an already-committed transition)', async () => {
+    findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
+    sendMock.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await expect(service.notifyReportConcluded(report, unit)).resolves.toBeUndefined();
+  });
 });

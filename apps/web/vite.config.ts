@@ -93,11 +93,15 @@ export default defineConfig({
     host: true,
     port: webPort ?? 3001,
     https: httpsConfig,
+    // Permite acesso via tunel Cloudflare (*.trycloudflare.com), cujo
+    // subdominio muda a cada reinicio do tunel — nao da para fixar um host.
+    allowedHosts: ['.trycloudflare.com'],
   },
   preview: {
     host: true,
     port: webPort ?? 4173,
     https: httpsConfig,
+    allowedHosts: ['.trycloudflare.com'],
   },
   test: {
     environment: 'jsdom',

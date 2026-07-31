@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Target } from 'lucide-react';
 import { distributeIndicatorScores, getIndicatorScores, updateIndicatorScores } from '../../../api/forms';
 import { Button, Spinner, useToast } from '../../ui';
 import { cn } from '../../../lib/cn';
+import type { IndicatorScoreSummary } from '../../../types/api';
 
 const SCORE_TARGET = 10;
 const SCORE_SUM_TOLERANCE = 0.01;
@@ -16,6 +17,7 @@ export function IndicatorScorePanel({ templateId }: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [weights, setWeights] = useState<Record<string, string>>({});
+  const [syncedSummary, setSyncedSummary] = useState<IndicatorScoreSummary | undefined>(undefined);
 
   const queryKey = ['indicator-scores', templateId];
   const { data: summary, isLoading } = useQuery({
@@ -23,12 +25,13 @@ export function IndicatorScorePanel({ templateId }: Props) {
     queryFn: () => getIndicatorScores(templateId),
   });
 
-  useEffect(() => {
-    if (!summary) {
-      return;
-    }
+  // Ajusta o estado durante o render (padrao recomendado pelo React para
+  // resincronizar estado derivado de dados assincronos) em vez de um
+  // useEffect com setState sincrono, que dispara um render em cascata.
+  if (summary && summary !== syncedSummary) {
+    setSyncedSummary(summary);
     setWeights(Object.fromEntries(summary.items.map((item) => [item.id, String(item.scoreWeight)])));
-  }, [summary]);
+  }
 
   const saveMutation = useMutation({
     mutationFn: (payload: Array<{ indicatorId: string; scoreWeight: number }>) =>

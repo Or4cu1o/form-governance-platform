@@ -9,6 +9,7 @@ import { formatReferenceMonth } from '../lib/format';
 import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE } from '../lib/status';
 import { Button, EmptyState, ProgressMeter, Spinner, StatusBadge, useToast } from '../components/ui';
 import type { ProgressMeterSegment } from '../components/ui';
+import type { IndicatorResponse } from '../types/api';
 
 export function ValidationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -37,8 +38,8 @@ export function ValidationDetailPage() {
   const responses = report?.indicatorResponses ?? [];
 
   const groupedResponses = useMemo(() => {
-    const map = new Map<string, { title: string; order: number; responses: any[] }>();
-    const noTopicResponses: any[] = [];
+    const map = new Map<string, { title: string; order: number; responses: IndicatorResponse[] }>();
+    const noTopicResponses: IndicatorResponse[] = [];
 
     if (!report) return [];
 

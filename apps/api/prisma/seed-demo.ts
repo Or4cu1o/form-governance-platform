@@ -1,6 +1,7 @@
 import {
   GoalOperator,
   IndicatorValidationStatus,
+  Prisma,
   PrismaClient,
   ReportStatus,
   RoleName,
@@ -14,6 +15,32 @@ const prisma = new PrismaClient();
 
 const SALT_ROUNDS = 10;
 const DEV_TEST_PASSWORD = 'FormOpsTeste@2026';
+
+type TemplateWithTopics = Prisma.FormTemplateGetPayload<{
+  include: { topics: { include: { indicators: true } } };
+}>;
+
+// Sorteia quais indicadores (por índice) ficam fora da meta em um mês, dado um
+// total de indicadores e uma taxa-alvo. Como o número de indicadores por
+// template é pequeno (ex.: 5 no N1), não dá para fatiar exatamente uma
+// porcentagem — a contagem-alvo é arredondada probabilisticamente (parte
+// fracionária de rate*count vira a chance de arredondar para cima) para que a
+// MÉDIA ao longo dos meses convirja para a taxa pedida, mesmo que um mês
+// isolado fique em 20% ou 40% (frações mais próximas possíveis com 5 itens).
+function pickNonCompliantIndices(indicatorCount: number, rate: number): Set<number> {
+  const expectedCount = rate * indicatorCount;
+  const baseCount = Math.floor(expectedCount);
+  const roundUpChance = expectedCount - baseCount;
+  const targetCount = Math.random() < roundUpChance ? baseCount + 1 : baseCount;
+
+  const shuffledIndices = Array.from({ length: indicatorCount }, (_, idx) => idx);
+  for (let i = shuffledIndices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]];
+  }
+
+  return new Set(shuffledIndices.slice(0, targetCount));
+}
 
 // ---------------------------------------------------------------------------
 // Definição das 5 Unidades Hospitalares da Demonstração
@@ -335,7 +362,241 @@ function generateAnalysisAndPlan(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Geração dos 6 relatórios mensais concluídos (Janeiro a Junho de 2026)
+// ---------------------------------------------------------------------------
+async function generateConcludedMonthlyReports(
+  unitId: string,
+  template: TemplateWithTopics,
+  templatePrefix: 'N1' | 'N3',
+  elaboradorId: string,
+  aprovadorMatrizId: string,
+  computeNonCompliance: (monthIndex: number, indicatorIndex: number) => boolean,
+): Promise<void> {
+  const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho'];
+
+  for (let m = 0; m < 6; m++) {
+    const year = 2026;
+    const referenceMonth = new Date(Date.UTC(year, m, 1));
+    const monthNameStr = `${monthNames[m]} de ${year}`;
+
+    const elaborationDueDate = new Date(Date.UTC(year, m + 1, 8));
+    const reviewDueDate = new Date(Date.UTC(year, m + 1, 10));
+    const approvalDueDate = new Date(Date.UTC(year, m + 1, 14));
+
+    const submittedForReviewAt = new Date(Date.UTC(year, m + 1, 4, 14, 30));
+    const submittedForApprovalAt = new Date(Date.UTC(year, m + 1, 7, 10, 15));
+    const concludedAt = new Date(Date.UTC(year, m + 1, 9, 16, 45));
+
+    const reportInstance = await prisma.reportInstance.upsert({
+      where: {
+        unitId_referenceMonth: {
+          unitId,
+          referenceMonth,
+        },
+      },
+      update: {
+        formTemplateId: template.id,
+        status: ReportStatus.CONCLUIDO,
+        elaborationDueDate,
+        reviewDueDate,
+        approvalDueDate,
+        submittedForReviewAt,
+        submittedForApprovalAt,
+        concludedAt,
+        slaDeflatorApplied: 0.0,
+        isElaborationOnTime: true,
+        isReviewOnTime: true,
+      },
+      create: {
+        unitId,
+        formTemplateId: template.id,
+        referenceMonth,
+        status: ReportStatus.CONCLUIDO,
+        elaborationDueDate,
+        reviewDueDate,
+        approvalDueDate,
+        submittedForReviewAt,
+        submittedForApprovalAt,
+        concludedAt,
+        slaDeflatorApplied: 0.0,
+        isElaborationOnTime: true,
+        isReviewOnTime: true,
+      },
+    });
+
+    const allIndicators = template.topics.flatMap((t) => t.indicators);
+    let calculatedIndicatorScore = 0;
+
+    for (let i = 0; i < allIndicators.length; i++) {
+      const indicator = allIndicators[i];
+
+      const shouldBeNonCompliant = computeNonCompliance(m, i);
+
+      const variableValues = generateVariableValues(
+        indicator.variableKeys,
+        m,
+        templatePrefix,
+        shouldBeNonCompliant,
+      );
+      const calculatedValue = evaluateFormula(indicator.formulaExpression, variableValues);
+      const isCompliant = checkCompliance(calculatedValue, indicator.goalOperator, Number(indicator.goalValue));
+      const { criticalAnalysis, actionPlan } = generateAnalysisAndPlan(indicator.title, monthNameStr, isCompliant);
+
+      if (isCompliant) {
+        calculatedIndicatorScore += Number(indicator.scoreWeight);
+      }
+
+      const response = await prisma.indicatorResponse.upsert({
+        where: {
+          reportInstanceId_formIndicatorId: {
+            reportInstanceId: reportInstance.id,
+            formIndicatorId: indicator.id,
+          },
+        },
+        update: {
+          snapshotTitle: indicator.title,
+          snapshotObjective: indicator.objective,
+          snapshotVariableKeys: indicator.variableKeys,
+          snapshotFormulaExpression: indicator.formulaExpression,
+          snapshotGoalOperator: indicator.goalOperator,
+          snapshotGoalValue: indicator.goalValue,
+          snapshotScoreWeight: indicator.scoreWeight,
+          variableValues,
+          calculatedValue,
+          isCompliant,
+          validationStatus: IndicatorValidationStatus.APROVADO,
+          criticalAnalysis,
+          actionPlan,
+          updatedByUserId: elaboradorId,
+        },
+        create: {
+          reportInstanceId: reportInstance.id,
+          formIndicatorId: indicator.id,
+          snapshotTitle: indicator.title,
+          snapshotObjective: indicator.objective,
+          snapshotVariableKeys: indicator.variableKeys,
+          snapshotFormulaExpression: indicator.formulaExpression,
+          snapshotGoalOperator: indicator.goalOperator,
+          snapshotGoalValue: indicator.goalValue,
+          snapshotScoreWeight: indicator.scoreWeight,
+          variableValues,
+          calculatedValue,
+          isCompliant,
+          validationStatus: IndicatorValidationStatus.APROVADO,
+          criticalAnalysis,
+          actionPlan,
+          updatedByUserId: elaboradorId,
+        },
+      });
+
+      const existingRecord = await prisma.validationRecord.findFirst({
+        where: {
+          indicatorResponseId: response.id,
+          aprovadorUserId: aprovadorMatrizId,
+        },
+      });
+
+      if (!existingRecord) {
+        await prisma.validationRecord.create({
+          data: {
+            indicatorResponseId: response.id,
+            aprovadorUserId: aprovadorMatrizId,
+            verdict: ValidationVerdict.APROVADO,
+            justification: 'Validação técnica realizada e aprovada conforme métricas e evidências de governança.',
+          },
+        });
+      }
+    }
+
+    const finalScore = Math.round(calculatedIndicatorScore * 100) / 100;
+
+    await prisma.reportInstance.update({
+      where: { id: reportInstance.id },
+      data: {
+        indicatorScore: finalScore,
+        totalScore: finalScore,
+      },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Geração do relatório do mês vigente (Julho/2026) em status PENDENTE
+// ---------------------------------------------------------------------------
+async function generatePendingReport(unitId: string, template: TemplateWithTopics): Promise<void> {
+  const currentMonthRef = new Date(Date.UTC(2026, 6, 1)); // 01/07/2026
+  const elabDueDateJul = new Date(Date.UTC(2026, 7, 10)); // 6º DU de Agosto/2026 (A prazo)
+  const revDueDateJul = new Date(Date.UTC(2026, 7, 12));
+  const appDueDateJul = new Date(Date.UTC(2026, 7, 14));
+
+  const pendingReportJul = await prisma.reportInstance.upsert({
+    where: {
+      unitId_referenceMonth: {
+        unitId,
+        referenceMonth: currentMonthRef,
+      },
+    },
+    update: {
+      formTemplateId: template.id,
+      status: ReportStatus.PENDENTE,
+      elaborationDueDate: elabDueDateJul,
+      reviewDueDate: revDueDateJul,
+      approvalDueDate: appDueDateJul,
+    },
+    create: {
+      unitId,
+      formTemplateId: template.id,
+      referenceMonth: currentMonthRef,
+      status: ReportStatus.PENDENTE,
+      elaborationDueDate: elabDueDateJul,
+      reviewDueDate: revDueDateJul,
+      approvalDueDate: appDueDateJul,
+    },
+  });
+
+  const currentIndicators = template.topics.flatMap((t) => t.indicators);
+  for (const indicator of currentIndicators) {
+    await prisma.indicatorResponse.upsert({
+      where: {
+        reportInstanceId_formIndicatorId: {
+          reportInstanceId: pendingReportJul.id,
+          formIndicatorId: indicator.id,
+        },
+      },
+      update: {
+        snapshotTitle: indicator.title,
+        snapshotObjective: indicator.objective,
+        snapshotVariableKeys: indicator.variableKeys,
+        snapshotFormulaExpression: indicator.formulaExpression,
+        snapshotGoalOperator: indicator.goalOperator,
+        snapshotGoalValue: indicator.goalValue,
+        snapshotScoreWeight: indicator.scoreWeight,
+        validationStatus: IndicatorValidationStatus.EM_REVISAO,
+      },
+      create: {
+        reportInstanceId: pendingReportJul.id,
+        formIndicatorId: indicator.id,
+        snapshotTitle: indicator.title,
+        snapshotObjective: indicator.objective,
+        snapshotVariableKeys: indicator.variableKeys,
+        snapshotFormulaExpression: indicator.formulaExpression,
+        snapshotGoalOperator: indicator.goalOperator,
+        snapshotGoalValue: indicator.goalValue,
+        snapshotScoreWeight: indicator.scoreWeight,
+        validationStatus: IndicatorValidationStatus.EM_REVISAO,
+      },
+    });
+  }
+}
+
 async function main() {
+  // Este seed cria usuarios com senha fixa (DEV_TEST_PASSWORD) — nunca pode
+  // rodar em producao, no mesmo padrao de guarda usado em seed.ts.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('seed-demo.ts nao pode ser executado com NODE_ENV=production (cria usuarios com senha fixa)');
+  }
+
   console.log('=== Iniciando Seed da Demonstração (5 Unidades / Jan-Jun Concluídos + Julho PENDENTE a Prazo) ===');
 
   // Limpar relatórios de meses posteriores a julho de 2026 (mês 8 em diante)
@@ -459,222 +720,59 @@ async function main() {
 
     console.log(`✓ Unidade ${unit.sigla} (${unit.nome}) e usuários de acesso sincronizados.`);
 
-    // 4. Gerar relatórios mensais concluídos de Janeiro (mês 1) até Junho (mês 6) de 2026
-    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho'];
-
-    for (let m = 0; m < 6; m++) {
-      const year = 2026;
-      const referenceMonth = new Date(Date.UTC(year, m, 1));
-      const monthNameStr = `${monthNames[m]} de ${year}`;
-
-      const elaborationDueDate = new Date(Date.UTC(year, m + 1, 8));
-      const reviewDueDate = new Date(Date.UTC(year, m + 1, 10));
-      const approvalDueDate = new Date(Date.UTC(year, m + 1, 14));
-
-      const submittedForReviewAt = new Date(Date.UTC(year, m + 1, 4, 14, 30));
-      const submittedForApprovalAt = new Date(Date.UTC(year, m + 1, 7, 10, 15));
-      const concludedAt = new Date(Date.UTC(year, m + 1, 9, 16, 45));
-
-      const reportInstance = await prisma.reportInstance.upsert({
-        where: {
-          unitId_referenceMonth: {
-            unitId: unit.id,
-            referenceMonth,
-          },
-        },
-        update: {
-          formTemplateId: template.id,
-          status: ReportStatus.CONCLUIDO,
-          elaborationDueDate,
-          reviewDueDate,
-          approvalDueDate,
-          submittedForReviewAt,
-          submittedForApprovalAt,
-          concludedAt,
-          slaDeflatorApplied: 0.0,
-          isElaborationOnTime: true,
-          isReviewOnTime: true,
-        },
-        create: {
-          unitId: unit.id,
-          formTemplateId: template.id,
-          referenceMonth,
-          status: ReportStatus.CONCLUIDO,
-          elaborationDueDate,
-          reviewDueDate,
-          approvalDueDate,
-          submittedForReviewAt,
-          submittedForApprovalAt,
-          concludedAt,
-          slaDeflatorApplied: 0.0,
-          isElaborationOnTime: true,
-          isReviewOnTime: true,
-        },
-      });
-
-      const allIndicators = template.topics.flatMap((t) => t.indicators);
-      let calculatedIndicatorScore = 0;
-
-      for (let i = 0; i < allIndicators.length; i++) {
-        const indicator = allIndicators[i];
-        
-        const sampleHash = (uIndex * 7 + m * 5 + i * 3) % 10;
-        const shouldBeNonCompliant = sampleHash < 3;
-
-        const variableValues = generateVariableValues(
-          indicator.variableKeys,
-          m,
-          config.templateNamePrefix,
-          shouldBeNonCompliant,
-        );
-        const calculatedValue = evaluateFormula(indicator.formulaExpression, variableValues);
-        const isCompliant = checkCompliance(calculatedValue, indicator.goalOperator, Number(indicator.goalValue));
-        const { criticalAnalysis, actionPlan } = generateAnalysisAndPlan(indicator.title, monthNameStr, isCompliant);
-
-        if (isCompliant) {
-          calculatedIndicatorScore += Number(indicator.scoreWeight);
-        }
-
-        const response = await prisma.indicatorResponse.upsert({
-          where: {
-            reportInstanceId_formIndicatorId: {
-              reportInstanceId: reportInstance.id,
-              formIndicatorId: indicator.id,
-            },
-          },
-          update: {
-            snapshotTitle: indicator.title,
-            snapshotObjective: indicator.objective,
-            snapshotVariableKeys: indicator.variableKeys,
-            snapshotFormulaExpression: indicator.formulaExpression,
-            snapshotGoalOperator: indicator.goalOperator,
-            snapshotGoalValue: indicator.goalValue,
-            snapshotScoreWeight: indicator.scoreWeight,
-            variableValues,
-            calculatedValue,
-            isCompliant,
-            validationStatus: IndicatorValidationStatus.APROVADO,
-            criticalAnalysis,
-            actionPlan,
-            updatedByUserId: elaborador.id,
-          },
-          create: {
-            reportInstanceId: reportInstance.id,
-            formIndicatorId: indicator.id,
-            snapshotTitle: indicator.title,
-            snapshotObjective: indicator.objective,
-            snapshotVariableKeys: indicator.variableKeys,
-            snapshotFormulaExpression: indicator.formulaExpression,
-            snapshotGoalOperator: indicator.goalOperator,
-            snapshotGoalValue: indicator.goalValue,
-            snapshotScoreWeight: indicator.scoreWeight,
-            variableValues,
-            calculatedValue,
-            isCompliant,
-            validationStatus: IndicatorValidationStatus.APROVADO,
-            criticalAnalysis,
-            actionPlan,
-            updatedByUserId: elaborador.id,
-          },
-        });
-
-        const existingRecord = await prisma.validationRecord.findFirst({
-          where: {
-            indicatorResponseId: response.id,
-            aprovadorUserId: aprovadorMatriz.id,
-          },
-        });
-
-        if (!existingRecord) {
-          await prisma.validationRecord.create({
-            data: {
-              indicatorResponseId: response.id,
-              aprovadorUserId: aprovadorMatriz.id,
-              verdict: ValidationVerdict.APROVADO,
-              justification: 'Validação técnica realizada e aprovada conforme métricas e evidências de governança.',
-            },
-          });
-        }
-      }
-
-      const finalScore = Math.round(calculatedIndicatorScore * 100) / 100;
-
-      await prisma.reportInstance.update({
-        where: { id: reportInstance.id },
-        data: {
-          indicatorScore: finalScore,
-          totalScore: finalScore,
-        },
-      });
-    }
-
-    // 5. Gerar relatório do Mês Vigente (Julho/2026) em status PENDENTE (Dentro do Prazo SLA)
-    const currentMonthRef = new Date(Date.UTC(2026, 6, 1)); // 01/07/2026
-    const elabDueDateJul = new Date(Date.UTC(2026, 7, 10)); // 6º DU de Agosto/2026 (A prazo)
-    const revDueDateJul = new Date(Date.UTC(2026, 7, 12));
-    const appDueDateJul = new Date(Date.UTC(2026, 7, 14));
-
-    const pendingReportJul = await prisma.reportInstance.upsert({
-      where: {
-        unitId_referenceMonth: {
-          unitId: unit.id,
-          referenceMonth: currentMonthRef,
-        },
-      },
-      update: {
-        formTemplateId: template.id,
-        status: ReportStatus.PENDENTE,
-        elaborationDueDate: elabDueDateJul,
-        reviewDueDate: revDueDateJul,
-        approvalDueDate: appDueDateJul,
-      },
-      create: {
-        unitId: unit.id,
-        formTemplateId: template.id,
-        referenceMonth: currentMonthRef,
-        status: ReportStatus.PENDENTE,
-        elaborationDueDate: elabDueDateJul,
-        reviewDueDate: revDueDateJul,
-        approvalDueDate: appDueDateJul,
-      },
-    });
-
-    const currentIndicators = template.topics.flatMap((t) => t.indicators);
-    for (const indicator of currentIndicators) {
-      await prisma.indicatorResponse.upsert({
-        where: {
-          reportInstanceId_formIndicatorId: {
-            reportInstanceId: pendingReportJul.id,
-            formIndicatorId: indicator.id,
-          },
-        },
-        update: {
-          snapshotTitle: indicator.title,
-          snapshotObjective: indicator.objective,
-          snapshotVariableKeys: indicator.variableKeys,
-          snapshotFormulaExpression: indicator.formulaExpression,
-          snapshotGoalOperator: indicator.goalOperator,
-          snapshotGoalValue: indicator.goalValue,
-          snapshotScoreWeight: indicator.scoreWeight,
-          validationStatus: IndicatorValidationStatus.EM_REVISAO,
-        },
-        create: {
-          reportInstanceId: pendingReportJul.id,
-          formIndicatorId: indicator.id,
-          snapshotTitle: indicator.title,
-          snapshotObjective: indicator.objective,
-          snapshotVariableKeys: indicator.variableKeys,
-          snapshotFormulaExpression: indicator.formulaExpression,
-          snapshotGoalOperator: indicator.goalOperator,
-          snapshotGoalValue: indicator.goalValue,
-          snapshotScoreWeight: indicator.scoreWeight,
-          validationStatus: IndicatorValidationStatus.EM_REVISAO,
-        },
-      });
-    }
+    // 4. Gerar 6 relatórios concluídos (Jan-Jun/2026), com não-conformidade
+    //    determinística por unidade/mês/indicador, e o relatório PENDENTE de Julho.
+    await generateConcludedMonthlyReports(
+      unit.id,
+      template,
+      config.templateNamePrefix,
+      elaborador.id,
+      aprovadorMatriz.id,
+      (m, i) => (uIndex * 7 + m * 5 + i * 3) % 10 < 3,
+    );
+    await generatePendingReport(unit.id, template);
 
     console.log(`  └─ 6 relatórios concluídos (Jan-Jun) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados para ${config.sigla}.`);
   }
+
+  // 4. Unidade MATRIZ: também precisa de histórico para permitir a demonstração
+  //    da elaboração (não apenas revisão/aprovação como nas 5 unidades acima).
+  //    Indicadores dentro/fora da meta sorteados aleatoriamente por indicador,
+  //    com taxa de não-conformidade sorteada por mês entre 25% e 35% (variável).
+  const matrizTemplate = n1Template;
+  const matrizUnit = await prisma.unit.upsert({
+    where: { sigla: 'MATRIZ' },
+    update: { formTemplateId: matrizTemplate.id },
+    create: { sigla: 'MATRIZ', nome: 'Matriz', level: UnitLevel.A, formTemplateId: matrizTemplate.id },
+  });
+  const matrizElaborador = await prisma.user.findFirstOrThrow({ where: { matricula: '10002' } });
+
+  const MIN_NON_COMPLIANCE_RATE = 0.25;
+  const NON_COMPLIANCE_RATE_SPREAD = 0.1; // faixa de 25% a 35%
+  const monthlyNonComplianceRates = Array.from(
+    { length: 6 },
+    () => MIN_NON_COMPLIANCE_RATE + Math.random() * NON_COMPLIANCE_RATE_SPREAD,
+  );
+  const matrizIndicatorCount = matrizTemplate.topics.flatMap((t) => t.indicators).length;
+  const monthlyNonCompliantIndices = monthlyNonComplianceRates.map((rate) =>
+    pickNonCompliantIndices(matrizIndicatorCount, rate),
+  );
+
+  await generateConcludedMonthlyReports(
+    matrizUnit.id,
+    matrizTemplate,
+    'N1',
+    matrizElaborador.id,
+    aprovadorMatriz.id,
+    (m, i) => monthlyNonCompliantIndices[m].has(i),
+  );
+  await generatePendingReport(matrizUnit.id, matrizTemplate);
+
+  console.log(
+    `✓ Unidade MATRIZ: 6 relatórios concluídos (Jan-Jun, ${monthlyNonComplianceRates
+      .map((r) => `${Math.round(r * 100)}%`)
+      .join('/')} fora da meta por mês) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados.`,
+  );
 
   console.log('\n=== Seed de Demonstração Concluído com Sucesso! ===');
 }

@@ -28,27 +28,39 @@ export class NotificationsService {
       `[SLA] Relatorio ${report.id} da unidade ${report.unit.sigla} ainda esta PENDENTE no 5o dia util do periodo.`,
     );
     const to = await this.findUnitRoleEmails(report.unit.id, [RoleName.ELABORADOR]);
-    await this.emailService.send({ to, ...buildSlaOverdueEmail(report, report.unit) });
+    await this.sendSafely({ to, ...buildSlaOverdueEmail(report, report.unit) });
   }
 
   async notifySubmittedForReview(report: ReportInstance, unit: Unit): Promise<void> {
     const to = await this.findUnitRoleEmails(unit.id, [RoleName.REVISOR]);
-    await this.emailService.send({ to, ...buildSubmittedForReviewEmail(report, unit) });
+    await this.sendSafely({ to, ...buildSubmittedForReviewEmail(report, unit) });
   }
 
   async notifySubmittedForApproval(report: ReportInstance, unit: Unit): Promise<void> {
     const to = await this.findOrgWideRoleEmails([RoleName.APROVADOR]);
-    await this.emailService.send({ to, ...buildSubmittedForApprovalEmail(report, unit) });
+    await this.sendSafely({ to, ...buildSubmittedForApprovalEmail(report, unit) });
   }
 
   async notifyReportReproved(report: ReportInstance, unit: Unit): Promise<void> {
     const to = await this.findUnitRoleEmails(unit.id, [RoleName.ELABORADOR, RoleName.REVISOR]);
-    await this.emailService.send({ to, ...buildReportReprovedEmail(report, unit) });
+    await this.sendSafely({ to, ...buildReportReprovedEmail(report, unit) });
   }
 
   async notifyReportConcluded(report: ReportInstance, unit: Unit): Promise<void> {
     const to = await this.findUnitRoleEmails(unit.id, [RoleName.ELABORADOR, RoleName.REVISOR]);
-    await this.emailService.send({ to, ...buildReportConcludedEmail(report, unit) });
+    await this.sendSafely({ to, ...buildReportConcludedEmail(report, unit) });
+  }
+
+  // As notificacoes sao um efeito colateral best-effort das transicoes de
+  // status, que ja foram persistidas no banco quando chegamos aqui. Uma
+  // falha de SMTP nao pode virar 500 para o caller depois que a transacao
+  // ja comitou — por isso o erro e logado, nunca propagado.
+  private async sendSafely(message: Parameters<EmailService['send']>[0]): Promise<void> {
+    try {
+      await this.emailService.send(message);
+    } catch (error) {
+      this.logger.error(`Falha ao enviar notificacao por e-mail para ${message.to.join(', ')}`, error);
+    }
   }
 
   private async findUnitRoleEmails(unitId: string, roles: RoleName[]): Promise<string[]> {
