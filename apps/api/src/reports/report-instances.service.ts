@@ -58,7 +58,10 @@ export class ReportInstancesService {
       // Tolera falhas concorrentes (ex.: duas requisicoes tentando abrir o
       // mesmo periodo ao mesmo tempo), mas registra qualquer outra falha
       // para nao mascarar problemas reais (banco fora do ar, bug de SLA).
-      this.logger.warn('Falha ao garantir abertura do periodo corrente para as unidades ativas', error);
+      this.logger.warn(
+        'Falha ao garantir abertura do periodo corrente para as unidades ativas',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 

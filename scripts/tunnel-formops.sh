@@ -10,14 +10,16 @@
 # qualquer forma.
 set -euo pipefail
 
-ROOT_DIR="/home/admin/projects/form-governance-platform"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # So le as 3 variaveis de porta necessarias, em vez de `source` + `set -a`
 # no .env inteiro — isso evitava exportar segredos (JWT_SECRET,
 # POSTGRES_PASSWORD, S3_SECRET_KEY, SMTP_PASSWORD, etc.) para o ambiente dos
 # processos cloudflared, um binario de terceiros.
-API_PORT="$(grep -m1 '^API_PORT=' "$ROOT_DIR/.env" | cut -d= -f2-)"
-WEB_PORT="$(grep -m1 '^WEB_PORT=' "$ROOT_DIR/.env" | cut -d= -f2-)"
+# O `|| true` evita que `set -e pipefail` mate o script quando a variavel
+# nao existe no .env (grep sem match retorna 1) antes de chegar no fallback.
+API_PORT="$(grep -m1 '^API_PORT=' "$ROOT_DIR/.env" | cut -d= -f2- || true)"
+WEB_PORT="$(grep -m1 '^WEB_PORT=' "$ROOT_DIR/.env" | cut -d= -f2- || true)"
 API_PORT="${API_PORT:-7442}"
 WEB_PORT="${WEB_PORT:-7443}"
 
