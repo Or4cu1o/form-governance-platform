@@ -74,20 +74,20 @@ constitucionais de disciplina de código em garantia do banco.
 
 ### Correções de modelo (data-model.md, Parte A)
 
-- [ ] T010 Alterar `apps/api/prisma/schema.prisma`: `IndicatorResponse` perde `@updatedAt` e passa a ser a identidade estável, ganhando `currentVersionId String?` (§A1)
-- [ ] T011 Alterar `apps/api/prisma/schema.prisma`: adicionar `User.jobTitle` (§A4)
-- [ ] T012 Alterar `apps/api/prisma/schema.prisma`: `EvidenceFile` ganha `scanStatus`, `scannedAt`, `scanEngineVersion`, `bucket`, `retainUntil`, `retentionMode`, `forensicHoldUntil`, `deactivatedByUserId`, `deactivatedAt` (§A5)
-- [ ] T013 Alterar `apps/api/prisma/schema.prisma`: `FormIndicator.catalogEntryId` obrigatório, com relação a `IndicatorCatalog` (§A6)
-- [ ] T014 Alterar `apps/api/prisma/schema.prisma`: `SystemSetting` ganha os sete parâmetros novos — `evidenceRetentionYears`, `includeOptionalHolidays`, `auditMaxRangeMonths`, `auditDetailedMaxRangeMonths`, `auditExactCountThreshold`, `outlierRule`, `forensicHoldYears` (§A7)
+- [x] T010 Alterar `apps/api/prisma/schema.prisma`: `IndicatorResponse` perde `@updatedAt` e passa a ser a identidade estável, ganhando `currentVersionId String?` (§A1)
+- [x] T011 Alterar `apps/api/prisma/schema.prisma`: adicionar `User.jobTitle` (§A4)
+- [x] T012 Alterar `apps/api/prisma/schema.prisma`: `EvidenceFile` ganha `scanStatus`, `scannedAt`, `scanEngineVersion`, `bucket`, `retainUntil`, `retentionMode`, `forensicHoldUntil`, `deactivatedByUserId`, `deactivatedAt` (§A5)
+- [x] T013 Alterar `apps/api/prisma/schema.prisma`: `FormIndicator.catalogEntryId` obrigatório, com relação a `IndicatorCatalog` (§A6)
+- [x] T014 Alterar `apps/api/prisma/schema.prisma`: `SystemSetting` ganha os sete parâmetros novos — `evidenceRetentionYears`, `includeOptionalHolidays`, `auditMaxRangeMonths`, `auditDetailedMaxRangeMonths`, `auditExactCountThreshold`, `outlierRule`, `forensicHoldYears` (§A7)
 
 ### Entidades novas (data-model.md, Parte B)
 
-- [ ] T015 [P] Criar o modelo `IndicatorCatalog` em `apps/api/prisma/schema.prisma` (§B1)
-- [ ] T016 Criar o modelo `IndicatorResponseVersion` em `apps/api/prisma/schema.prisma` com `validFrom`/`validTo`, `overwroteVersionId`, `originLegacy` e índice único parcial `UNIQUE (indicator_response_id) WHERE valid_to IS NULL` (§B2)
-- [ ] T017 [P] Criar o modelo `ReportSubmission` em `apps/api/prisma/schema.prisma`, substituindo os campos únicos de pontualidade de `ReportInstance` (§B3, §A2)
-- [ ] T018 [P] Criar o modelo `AccessLog` no schema `audit` em `apps/api/prisma/schema.prisma`, com enum `actorKind` (`USUARIO` | `SISTEMA` | `ANONIMO_DECLARADO`) (§B4)
-- [ ] T018a [P] Criar os modelos `ExportSeal` e `ExportSealRevocation` em `apps/api/prisma/schema.prisma` (§B5), com `contentDigest`, `artifactDigest`, `signature`, `keyId`, `verificationCode` único, escopo, autoria e emissão; a revogação é entidade separada, jamais coluna do selo
-- [ ] T019 Mover `AuditLog` para o schema `audit` e adicionar `sourceIp`, `userAgent`, `origin`, `requestId`, `actorNameSnapshot`, `actorJobTitleSnapshot`, `actorRoleSnapshot`, `actorUnitSnapshot` (§A3, FR-069)
+- [x] T015 [P] Criar o modelo `IndicatorCatalog` em `apps/api/prisma/schema.prisma` (§B1)
+- [x] T016 Criar o modelo `IndicatorResponseVersion` em `apps/api/prisma/schema.prisma` com `validFrom`/`validTo`, `overwroteVersionId`, `originLegacy` e índice único parcial `UNIQUE (indicator_response_id) WHERE valid_to IS NULL` (§B2) — o índice parcial em si é criado na migração SQL (T021), o Prisma schema não expressa `WHERE`
+- [x] T017 [P] Criar o modelo `ReportSubmission` em `apps/api/prisma/schema.prisma`, substituindo os campos únicos de pontualidade de `ReportInstance` (§B3, §A2)
+- [x] T018 [P] Criar o modelo `AccessLog` no schema `audit` em `apps/api/prisma/schema.prisma`, com enum `actorKind` (`USUARIO` | `SISTEMA` | `ANONIMO_DECLARADO`) (§B4)
+- [x] T018a [P] Criar os modelos `ExportSeal` e `ExportSealRevocation` em `apps/api/prisma/schema.prisma` (§B5), com `contentDigest`, `artifactDigest`, `signature`, `keyId`, `verificationCode` único, escopo, autoria e emissão; a revogação é entidade separada, jamais coluna do selo
+- [x] T019 Mover `AuditLog` para o schema `audit` e adicionar `sourceIp`, `userAgent`, `origin`, `requestId`, `actorNameSnapshot`, `actorJobTitleSnapshot`, `actorRoleSnapshot`, `actorUnitSnapshot` (§A3, FR-069)
 
 ### Migração SQL
 

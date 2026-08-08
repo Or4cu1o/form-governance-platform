@@ -82,6 +82,79 @@ enum AuditAction {
   @@schema("public")
 }
 
+enum EvidenceScanStatus {
+  PENDENTE
+  LIBERADO
+  BLOQUEADO
+
+  @@map("evidence_scan_status")
+  @@schema("public")
+}
+
+enum EvidenceRetentionMode {
+  JANELA
+  INDEFINIDA
+
+  @@map("evidence_retention_mode")
+  @@schema("public")
+}
+
+enum InheritanceState {
+  NAO_HERDADO
+  HERDADO
+  HERDADO_PARCIAL
+
+  @@map("inheritance_state")
+  @@schema("public")
+}
+
+enum ReportSubmissionStage {
+  ELABORACAO
+  REVISAO
+  APROVACAO
+
+  @@map("report_submission_stage")
+  @@schema("public")
+}
+
+enum ActorKind {
+  USUARIO
+  SISTEMA
+  ANONIMO_DECLARADO
+
+  @@map("actor_kind")
+  @@schema("audit")
+}
+
+enum AccessLogEventType {
+  CONSULTA_AUDITORIA
+  EXPORTACAO
+  DOWNLOAD_EVIDENCIA
+  VERIFICACAO_SELO
+  LOGIN_SUCESSO
+  LOGIN_FALHA
+
+  @@map("access_log_event_type")
+  @@schema("audit")
+}
+
+enum ExportArtifactKind {
+  RELATORIO
+  CONSULTA_AUDITORIA
+
+  @@map("export_artifact_kind")
+  @@schema("public")
+}
+
+enum ExportArtifactFormat {
+  PDF
+  CSV
+  JSON
+
+  @@map("export_artifact_format")
+  @@schema("public")
+}
+
 // ---------------------------------------------------------------------------
 // RBAC / Identidade e Unidades (Secao 3)
 // ---------------------------------------------------------------------------
@@ -114,17 +187,26 @@ model User {
   email         String   @unique
   passwordHash  String   @map("password_hash")
   role          RoleName
+  // Funcao na organizacao, dado proprio, distinto de RoleName (FR-074).
+  // Obrigatorio para quem pode aprovar — estampado no documento selado.
+  jobTitle      String?  @map("job_title")
   primaryUnitId String   @map("primary_unit_id")
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  primaryUnit       Unit                @relation("PrimaryUnit", fields: [primaryUnitId], references: [id])
-  unitAccesses      UserUnitAccess[]
-  updatedResponses  IndicatorResponse[] @relation("ResponseUpdatedBy")
-  uploadedEvidences EvidenceFile[]      @relation("EvidenceUploadedBy")
-  validationRecords ValidationRecord[]  @relation("ValidationByAprovador")
-  auditLogs         AuditLog[]          @relation("AuditActor")
+  primaryUnit              Unit                       @relation("PrimaryUnit", fields: [primaryUnitId], references: [id])
+  unitAccesses             UserUnitAccess[]
+  updatedResponses         IndicatorResponse[]        @relation("ResponseUpdatedBy")
+  uploadedEvidences        EvidenceFile[]             @relation("EvidenceUploadedBy")
+  deactivatedEvidences     EvidenceFile[]             @relation("EvidenceDeactivatedBy")
+  validationRecords        ValidationRecord[]         @relation("ValidationByAprovador")
+  auditLogs                AuditLog[]                 @relation("AuditActor")
+  authoredResponseVersions IndicatorResponseVersion[] @relation("ResponseVersionAuthor")
+  submittedReports         ReportSubmission[]         @relation("ReportSubmittedBy")
+  accessLogs               AccessLog[]                @relation("AccessLogActor")
+  issuedSeals              ExportSeal[]               @relation("SealIssuedBy")
+  revokedSeals             ExportSealRevocation[]     @relation("SealRevokedBy")
 
   @@map("users")
   @@schema("public")
@@ -202,10 +284,15 @@ model FormIndicator {
   // A soma dos pesos dos indicadores ativos de um FormTemplate deve ser
   // exatamente 10 (validado em FormIndicatorsService, nao no banco).
   scoreWeight       Decimal      @default(0) @map("score_weight") @db.Decimal(5, 2)
+  // Vinculo ao catalogo canonico (FR-062). Obrigatorio — cadastro sem codigo
+  // canonico e recusado. Nullable ate a migracao de backfill (T024) rodar;
+  // a partir dai o banco garante NOT NULL.
+  catalogEntryId    String       @map("catalog_entry_id")
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
   formTopic          FormTopic           @relation(fields: [formTopicId], references: [id])
+  catalogEntry       IndicatorCatalog    @relation(fields: [catalogEntryId], references: [id])
   indicatorResponses IndicatorResponse[]
 
   @@map("form_indicators")
@@ -233,18 +320,19 @@ model ReportInstance {
 
   // Nota final do relatorio, calculada uma unica vez em finalizeReport()
   // (Secao 5) e congelada — nao e recalculada se pesos/settings mudarem depois.
-  indicatorScore     Decimal? @map("indicator_score") @db.Decimal(5, 2)
-  slaDeflatorApplied Decimal? @map("sla_deflator_applied") @db.Decimal(5, 2)
-  totalScore         Decimal? @map("total_score") @db.Decimal(5, 2)
+  indicatorScore      Decimal? @map("indicator_score") @db.Decimal(5, 2)
+  slaDeflatorApplied  Decimal? @map("sla_deflator_applied") @db.Decimal(5, 2)
+  totalScore          Decimal? @map("total_score") @db.Decimal(5, 2)
   isElaborationOnTime Boolean? @map("is_elaboration_on_time")
   isReviewOnTime      Boolean? @map("is_review_on_time")
 
-  createdAt              DateTime     @default(now()) @map("created_at")
-  updatedAt              DateTime     @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   unit               Unit                @relation(fields: [unitId], references: [id])
   formTemplate       FormTemplate        @relation(fields: [formTemplateId], references: [id])
   indicatorResponses IndicatorResponse[]
+  submissions        ReportSubmission[]
 
   @@unique([unitId, referenceMonth])
   @@map("report_instances")
@@ -279,15 +367,26 @@ model IndicatorResponse {
 
   validationStatus IndicatorValidationStatus @default(EM_REVISAO) @map("validation_status")
 
-  updatedByUserId String?  @map("updated_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  // Identidade estavel (A1): a resposta em si nunca sofre UPDATE de conteudo.
+  // Aponta a versao com validTo IS NULL em IndicatorResponseVersion — a
+  // unica fonte de verdade para o conteudo mutavel. Os campos acima
+  // (variableValues, calculatedValue, isCompliant, criticalAnalysis,
+  // actionPlan) permanecem fisicamente na tabela como PROJECAO da versao
+  // corrente, mantida pela mesma transacao que insere a versao nova —
+  // nunca escritos isoladamente.
+  currentVersionId String?  @map("current_version_id")
+  updatedByUserId  String?  @map("updated_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  // Sem @updatedAt: esta linha nao sofre UPDATE isolado. O timestamp e
+  // mantido explicitamente pela transacao que insere a versao nova.
+  updatedAt        DateTime @map("updated_at")
 
-  reportInstance    ReportInstance     @relation(fields: [reportInstanceId], references: [id])
-  formIndicator     FormIndicator      @relation(fields: [formIndicatorId], references: [id])
-  updatedByUser     User?              @relation("ResponseUpdatedBy", fields: [updatedByUserId], references: [id])
+  reportInstance    ReportInstance             @relation(fields: [reportInstanceId], references: [id])
+  formIndicator     FormIndicator              @relation(fields: [formIndicatorId], references: [id])
+  updatedByUser     User?                      @relation("ResponseUpdatedBy", fields: [updatedByUserId], references: [id])
   evidenceFiles     EvidenceFile[]
   validationRecords ValidationRecord[]
+  versions          IndicatorResponseVersion[]
 
   @@unique([reportInstanceId, formIndicatorId])
   @@map("indicator_responses")
@@ -299,20 +398,42 @@ model IndicatorResponse {
 // ---------------------------------------------------------------------------
 
 model EvidenceFile {
-  id                  String   @id @default(uuid())
-  indicatorResponseId String?  @map("indicator_response_id")
-  validationRecordId  String?  @map("validation_record_id")
-  fileKey             String   @map("file_key")
-  fileName            String   @map("file_name")
-  mimeType            String   @map("mime_type")
-  sizeBytes           Int      @map("size_bytes")
-  uploadedByUserId    String   @map("uploaded_by_user_id")
-  isActive            Boolean  @default(true) @map("is_active")
-  createdAt           DateTime @default(now()) @map("created_at")
+  id                  String  @id @default(uuid())
+  indicatorResponseId String? @map("indicator_response_id")
+  validationRecordId  String? @map("validation_record_id")
+  fileKey             String  @map("file_key")
+  fileName            String  @map("file_name")
+  mimeType            String  @map("mime_type")
+  sizeBytes           Int     @map("size_bytes")
+  uploadedByUserId    String  @map("uploaded_by_user_id")
+  isActive            Boolean @default(true) @map("is_active")
+
+  // Verificacao antivirus (FR-037). PENDENTE ate o veredito; so LIBERADO
+  // promove ao bucket imutavel.
+  scanStatus        EvidenceScanStatus    @default(PENDENTE) @map("scan_status")
+  scannedAt         DateTime?             @map("scanned_at")
+  scanEngineVersion String?               @map("scan_engine_version")
+  // Quarentena ou imutavel — nome do bucket S3 onde o objeto reside agora.
+  // Migracao adiciona nullable e faz backfill do legado antes do NOT NULL.
+  bucket            String                @map("bucket")
+  // Carimbado no PutObject a partir de SystemSetting.evidenceRetentionYears
+  // (FR-042). Nulo apenas quando retentionMode = INDEFINIDA.
+  retainUntil       DateTime?             @map("retain_until")
+  retentionMode     EvidenceRetentionMode @default(JANELA) @map("retention_mode")
+  // scannedAt + 1 ano quando bloqueado (FR-039a).
+  forensicHoldUntil DateTime?             @map("forensic_hold_until")
+
+  // Desativacao logica (FR-041): some da superficie de trabalho, nunca da
+  // auditoria, exportacao ou camada analitica.
+  deactivatedByUserId String?   @map("deactivated_by_user_id")
+  deactivatedAt       DateTime? @map("deactivated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   indicatorResponse IndicatorResponse? @relation(fields: [indicatorResponseId], references: [id])
   validationRecord  ValidationRecord?  @relation(fields: [validationRecordId], references: [id])
   uploadedByUser    User               @relation("EvidenceUploadedBy", fields: [uploadedByUserId], references: [id])
+  deactivatedByUser User?              @relation("EvidenceDeactivatedBy", fields: [deactivatedByUserId], references: [id])
 
   @@map("evidence_files")
   @@schema("public")
@@ -340,19 +461,34 @@ model ValidationRecord {
 // ---------------------------------------------------------------------------
 
 model SystemSetting {
-  id                  String   @id @default(uuid())
-  exportNamingPattern String   @default("Relatorio Operacional de Tecnologia da Informacao - {SIGLA_UNIDADE} - {DATA_ISO}") @map("export_naming_pattern")
+  id                  String @id @default(uuid())
+  exportNamingPattern String @default("Relatorio Operacional de Tecnologia da Informacao - {SIGLA_UNIDADE} - {DATA_ISO}") @map("export_naming_pattern")
 
   // Prazos de SLA (em dia util do mes) — antes hardcoded em report-lifecycle.service.ts
-  slaElaborationBusinessDay Int @default(6) @map("sla_elaboration_business_day")
-  slaReviewBusinessDay      Int @default(8) @map("sla_review_business_day")
-  slaApprovalBusinessDay    Int @default(10) @map("sla_approval_business_day")
+  slaElaborationBusinessDay Int     @default(6) @map("sla_elaboration_business_day")
+  slaReviewBusinessDay      Int     @default(8) @map("sla_review_business_day")
+  slaApprovalBusinessDay    Int     @default(10) @map("sla_approval_business_day")
   // Extensao de prazo (em dias uteis) concedida quando o relatorio e reprovado
   // na validacao — antes hardcoded em validation.service.ts
-  slaReprovalExtensionDays Int @default(2) @map("sla_reproval_extension_days")
+  slaReprovalExtensionDays  Int     @default(2) @map("sla_reproval_extension_days")
   // Pontos deduzidos da nota do relatorio por etapa (elaboracao/revisao) que
   // ultrapassar o prazo. Aplicado ate 2x (uma por etapa) em finalizeReport().
-  slaDeflatorScore Decimal @default(2) @map("sla_deflator_score") @db.Decimal(5, 2)
+  slaDeflatorScore          Decimal @default(2) @map("sla_deflator_score") @db.Decimal(5, 2)
+
+  // Janela de retencao de evidencia em anos; -1 = indeterminado (FR-043).
+  evidenceRetentionYears      Int     @default(10) @map("evidence_retention_years")
+  // Carnaval e Corpus Christi desligados por padrao (FR-015).
+  includeOptionalHolidays     Boolean @default(false) @map("include_optional_holidays")
+  // Amplitude maxima de consulta de auditoria, em meses (FR-091).
+  auditMaxRangeMonths         Int     @default(24) @map("audit_max_range_months")
+  // Modo detalhado sob limite mais estrito.
+  auditDetailedMaxRangeMonths Int     @default(12) @map("audit_detailed_max_range_months")
+  // Contagem exata so abaixo deste teto.
+  auditExactCountThreshold    Int     @default(10000) @map("audit_exact_count_threshold")
+  // Regra de deteccao de outlier declarada na interface (FR-087).
+  outlierRule                 String  @default("IQR") @map("outlier_rule")
+  // Guarda pericial de evidencia bloqueada, em anos (FR-039a).
+  forensicHoldYears           Int     @default(1) @map("forensic_hold_years")
 
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -372,11 +508,201 @@ model AuditLog {
   userId        String?     @map("user_id")
   previousValue Json?       @map("previous_value")
   newValue      Json?       @map("new_value")
-  changedAt     DateTime    @default(now()) @map("changed_at")
+
+  // Contexto de requisicao exigido por FR-069. sourceIp/userAgent/requestId
+  // sao nulos apenas para ator de sistema (cron/seed); origin nunca e nulo —
+  // escrita sem contexto e rejeitada pelo AuditContextService antes de
+  // chegar ao banco (Principio I).
+  sourceIp  String? @map("source_ip")
+  userAgent String? @map("user_agent")
+  origin    String  @map("origin")
+  requestId String? @map("request_id")
+
+  // Estampados no instante do evento — o cargo/perfil/lotacao do autor
+  // como eram naquele momento, nunca lidos retroativamente do cadastro
+  // corrente (Principio I).
+  actorNameSnapshot     String? @map("actor_name_snapshot")
+  actorJobTitleSnapshot String? @map("actor_job_title_snapshot")
+  actorRoleSnapshot     String? @map("actor_role_snapshot")
+  actorUnitSnapshot     String? @map("actor_unit_snapshot")
+
+  changedAt DateTime @default(now()) @map("changed_at")
 
   user User? @relation("AuditActor", fields: [userId], references: [id])
 
   @@index([tableName, recordId])
   @@map("audit_logs")
+  @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Catalogo canonico de indicadores (B1) — identidade estavel entre formularios
+// ---------------------------------------------------------------------------
+
+model IndicatorCatalog {
+  id              String @id @default(uuid())
+  code            String @unique
+  name            String
+  // Imutavel apos o primeiro vinculo (FR-064) — aplicado em CatalogService,
+  // nao no banco: a coluna aceita UPDATE, a regra de negocio e que recusa.
+  measurementUnit String @map("measurement_unit")
+
+  description String?
+  // Nao desativavel com indicadores ativos vinculados (FR-064).
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  indicators FormIndicator[]
+
+  @@map("indicator_catalog")
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Versionamento append-only de resposta (B2) — coracao do Principio I
+// ---------------------------------------------------------------------------
+
+model IndicatorResponseVersion {
+  id                  String @id @default(uuid())
+  indicatorResponseId String @map("indicator_response_id")
+
+  validFrom DateTime  @default(now()) @map("valid_from")
+  // NULL = versao corrente. UNIQUE (indicator_response_id) WHERE valid_to
+  // IS NULL garante no banco que so existe uma corrente por vez (migracao).
+  validTo   DateTime? @map("valid_to")
+
+  variableValues           Json     @default("{}") @map("variable_values")
+  calculatedValue          Decimal? @map("calculated_value") @db.Decimal(18, 4)
+  // Motivo exato quando o calculo e impossivel (FR-028) — nunca zero de
+  // conveniencia.
+  calculationFailureReason String?  @map("calculation_failure_reason")
+  // NULL sem resultado apurado (FR-029).
+  isCompliant              Boolean? @map("is_compliant")
+  criticalAnalysis         String?  @map("critical_analysis")
+  actionPlan               String?  @map("action_plan")
+
+  inheritanceState        InheritanceState @default(NAO_HERDADO) @map("inheritance_state")
+  unresolvedInheritedKeys String[]         @map("unresolved_inherited_keys")
+
+  // Nulo apenas para ator de sistema.
+  authoredByUserId   String? @map("authored_by_user_id")
+  // Preenchido so em sobrescrita deliberada (FR-129) — segunda requisicao,
+  // distinguivel na trilha.
+  overwroteVersionId String? @map("overwrote_version_id")
+  // true na carga inicial (T022) — nao finge historico que nao existe.
+  originLegacy       Boolean @default(false) @map("origin_legacy")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  indicatorResponse IndicatorResponse @relation(fields: [indicatorResponseId], references: [id])
+  authoredByUser    User?             @relation("ResponseVersionAuthor", fields: [authoredByUserId], references: [id])
+
+  @@map("indicator_response_version")
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Uma linha por envio (B3) — pontualidade nunca sobrescrita (FR-058)
+// ---------------------------------------------------------------------------
+
+model ReportSubmission {
+  id                        String                @id @default(uuid())
+  reportInstanceId          String                @map("report_instance_id")
+  stage                     ReportSubmissionStage
+  submittedByUserId         String                @map("submitted_by_user_id")
+  submittedAt               DateTime              @default(now()) @map("submitted_at")
+  // Prazo vigente aferido — o estendido quando houver (FR-056).
+  effectiveDueDate          DateTime              @map("effective_due_date") @db.Date
+  wasOnTime                 Boolean
+  // Ciclo (numero de reprovacoes) a que esta submissao pertence.
+  reprovalCountAtSubmission Int                   @default(0) @map("reproval_count_at_submission")
+
+  reportInstance  ReportInstance @relation(fields: [reportInstanceId], references: [id])
+  submittedByUser User           @relation("ReportSubmittedBy", fields: [submittedByUserId], references: [id])
+
+  @@map("report_submission")
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Trilha de leitura sensivel (B4, schema audit) — FR-073
+// ---------------------------------------------------------------------------
+
+model AccessLog {
+  id        String             @id @default(uuid())
+  eventType AccessLogEventType @map("event_type")
+  // NULL apenas com actorKind = ANONIMO_DECLARADO.
+  userId    String?            @map("user_id")
+  // "ninguem autenticado, e sabemos disso" != "nao sabemos quem foi" (FR-072).
+  actorKind ActorKind          @map("actor_kind")
+
+  filtersApplied Json?    @map("filters_applied")
+  scopeUnitIds   String[] @map("scope_unit_ids")
+  resultVolume   Int?     @map("result_volume")
+
+  sourceIp  String? @map("source_ip")
+  userAgent String? @map("user_agent")
+  requestId String? @map("request_id")
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  user User? @relation("AccessLogActor", fields: [userId], references: [id])
+
+  @@index([eventType, occurredAt])
+  @@map("access_log")
+  @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Selo de integridade (B5) — a revogacao e registro adicional, nunca alteracao
+// ---------------------------------------------------------------------------
+
+model ExportSeal {
+  id String @id @default(uuid())
+
+  // Unico, legivel, nao sequencial e nao enumeravel (FR-100).
+  verificationCode    String @unique @map("verification_code")
+  // Versao do contrato de serializacao canonica (FR-099).
+  sealContractVersion String @map("seal_contract_version")
+  // SHA-256 do dado canonico — igual nos tres formatos do mesmo recorte.
+  contentDigest       String @map("content_digest")
+  // SHA-256 dos bytes entregues — difere por formato.
+  artifactDigest      String @map("artifact_digest")
+  // Ed25519 sobre contentDigest.
+  signature           String
+  // Permite verificacao offline e preserva selos de chaves anteriores (FR-104).
+  keyId               String @map("key_id")
+
+  artifactKind    ExportArtifactKind   @map("artifact_kind")
+  artifactFormat  ExportArtifactFormat @map("artifact_format")
+  // Unidade, periodo, filtros, escopo do solicitante.
+  scopeDescriptor Json                 @map("scope_descriptor")
+
+  issuedByUserId String   @map("issued_by_user_id")
+  issuedAt       DateTime @default(now()) @map("issued_at")
+
+  // Conjunto vazio tambem recebe selo (FR-097).
+  isEmptyResult Boolean @default(false) @map("is_empty_result")
+  isPartial     Boolean @default(false) @map("is_partial")
+
+  issuedByUser User                  @relation("SealIssuedBy", fields: [issuedByUserId], references: [id])
+  revocation   ExportSealRevocation?
+
+  @@map("export_seal")
+  @@schema("public")
+}
+
+model ExportSealRevocation {
+  id              String   @id @default(uuid())
+  sealId          String   @unique @map("seal_id")
+  reason          String
+  revokedByUserId String   @map("revoked_by_user_id")
+  revokedAt       DateTime @default(now()) @map("revoked_at")
+
+  seal          ExportSeal @relation(fields: [sealId], references: [id])
+  revokedByUser User       @relation("SealRevokedBy", fields: [revokedByUserId], references: [id])
+
+  @@map("export_seal_revocation")
   @@schema("public")
 }
