@@ -48,6 +48,8 @@ function loadEnv() {
   process.env.WEB_PORT = process.env.WEB_PORT || '3001';
   process.env.POSTGRES_PORT = process.env.POSTGRES_PORT || '5432';
   process.env.MINIO_API_PORT = process.env.MINIO_API_PORT || '9000';
+  process.env.CLAMAV_PORT = process.env.CLAMAV_PORT || '3310';
+  process.env.CLAMAV_HOST = process.env.CLAMAV_HOST || 'localhost';
   // VITE_API_URL, DATABASE_URL e S3_ENDPOINT sao derivadas em vez de mantidas separadas, evitando desalinhamento
   process.env.VITE_API_URL = process.env.VITE_API_URL || `http://localhost:${process.env.API_PORT}`;
   process.env.DATABASE_URL = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
@@ -293,6 +295,32 @@ async function waitAndMigrateDb() {
   run('npm run prisma:generate --workspace=apps/api');
 }
 
+// Aguardar MinIO e provisionar os buckets com Object Lock (T007/T008):
+// o lock so pode ser habilitado na criacao do bucket, entao isto roda
+// antes da API subir, nunca sob demanda no primeiro upload.
+async function waitAndProvisionBuckets() {
+  console.log(`${YELLOW}Provisionando buckets de evidencia (imutavel + quarentena)...${RESET}`);
+  let retries = 0;
+  let ok = false;
+  const MAX_RETRIES = 30; // ate 60s de tolerancia para o MinIO subir
+  while (retries < MAX_RETRIES) {
+    try {
+      execSync('npm run provision:buckets --workspace=apps/api', { cwd: ROOT_DIR, stdio: 'ignore' });
+      console.log(`${GREEN}✓ Buckets de evidencia provisionados!${RESET}`);
+      ok = true;
+      break;
+    } catch {
+      retries++;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  if (!ok) {
+    console.error(`${RED}Erro: nao foi possivel provisionar os buckets de evidencia no MinIO.${RESET}`);
+    run('npm run provision:buckets --workspace=apps/api');
+    process.exit(1);
+  }
+}
+
 // Iniciar processos da aplicação
 function startProcesses() {
   if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -412,10 +440,11 @@ async function commandStart() {
 
   if (DOCKER_COMPOSE) {
     console.log('Subindo containers de suporte (PostgreSQL + MinIO)...');
-    run(`${DOCKER_COMPOSE} up -d postgres minio`);
+    run(`${DOCKER_COMPOSE} up -d postgres minio clamav`);
   }
 
   await waitAndMigrateDb();
+  await waitAndProvisionBuckets();
 
   if (!isFlush) {
     if (process.env.SEED_ON_START === 'true' || process.env.NODE_ENV === 'development') {
@@ -480,10 +509,11 @@ async function commandRestart() {
   stopApp();
   if (DOCKER_COMPOSE) {
     console.log(`Garantindo containers Docker ativos (${DOCKER_COMPOSE} up -d)...`);
-    run(`${DOCKER_COMPOSE} up -d postgres minio`, { ignoreError: true });
+    run(`${DOCKER_COMPOSE} up -d postgres minio clamav`, { ignoreError: true });
     run(`${DOCKER_COMPOSE} restart`, { ignoreError: true });
   }
   await waitAndMigrateDb();
+  await waitAndProvisionBuckets();
 
   if (process.env.SEED_ON_START === 'true' || process.env.NODE_ENV === 'development') {
     console.log('Executando carga de dados de seed...');
@@ -513,11 +543,12 @@ async function commandDeploy(withSeeds = false) {
   run('npm install --ignore-scripts --no-audit');
 
   if (DOCKER_COMPOSE) {
-    console.log('Subindo novos containers Docker (PostgreSQL + MinIO)...');
-    run(`${DOCKER_COMPOSE} up -d postgres minio`);
+    console.log('Subindo novos containers Docker (PostgreSQL + MinIO + ClamAV)...');
+    run(`${DOCKER_COMPOSE} up -d postgres minio clamav`);
   }
 
   await waitAndMigrateDb();
+  await waitAndProvisionBuckets();
   console.log('\nExecutando carga de dados de seed (Admin + Usuários de Teste Dev)...');
   run('npm run seed --workspace=apps/api');
 

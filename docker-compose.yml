@@ -34,6 +34,20 @@ services:
       timeout: 5s
       retries: 10
 
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - formops_clamav_data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
   api:
     build:
       context: .
@@ -42,12 +56,16 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       S3_ENDPOINT: http://minio:9000
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
     ports:
       - "${API_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
 
   web:
@@ -66,3 +84,4 @@ services:
 volumes:
   formops_postgres_data:
   formops_minio_data:
+  formops_clamav_data:

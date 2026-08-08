@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["public", "audit", "analytics"]
 }
 
 // ---------------------------------------------------------------------------
@@ -19,6 +21,7 @@ enum RoleName {
   ADMINISTRADOR
 
   @@map("role_name")
+  @@schema("public")
 }
 
 enum UnitLevel {
@@ -27,6 +30,7 @@ enum UnitLevel {
   C
 
   @@map("unit_level")
+  @@schema("public")
 }
 
 enum GoalOperator {
@@ -37,6 +41,7 @@ enum GoalOperator {
   LT
 
   @@map("goal_operator")
+  @@schema("public")
 }
 
 // Status do ciclo de vida do ReportInstance (Secao 4 do PROMPT.md)
@@ -47,6 +52,7 @@ enum ReportStatus {
   CONCLUIDO
 
   @@map("report_status")
+  @@schema("public")
 }
 
 // Flags de validacao por indicador (Mesa de Validacao Tecnica / exportacao)
@@ -57,6 +63,7 @@ enum IndicatorValidationStatus {
   REPROVADO
 
   @@map("indicator_validation_status")
+  @@schema("public")
 }
 
 enum ValidationVerdict {
@@ -64,6 +71,7 @@ enum ValidationVerdict {
   REPROVADO
 
   @@map("validation_verdict")
+  @@schema("public")
 }
 
 enum AuditAction {
@@ -71,6 +79,7 @@ enum AuditAction {
   UPDATE
 
   @@map("audit_action")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +103,7 @@ model Unit {
   reportInstances ReportInstance[]
 
   @@map("units")
+  @@schema("public")
 }
 
 model User {
@@ -117,6 +127,7 @@ model User {
   auditLogs         AuditLog[]          @relation("AuditActor")
 
   @@map("users")
+  @@schema("public")
 }
 
 // Unidades adicionais que um usuario pode enxergar em modo leitura
@@ -133,6 +144,7 @@ model UserUnitAccess {
 
   @@unique([userId, unitId])
   @@map("user_unit_access")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +164,7 @@ model FormTemplate {
   reportInstances ReportInstance[]
 
   @@map("form_templates")
+  @@schema("public")
 }
 
 model FormTopic {
@@ -167,6 +180,7 @@ model FormTopic {
   indicators   FormIndicator[]
 
   @@map("form_topics")
+  @@schema("public")
 }
 
 // Definicao de metadados de um indicador. Alteracoes aqui valem para
@@ -195,6 +209,7 @@ model FormIndicator {
   indicatorResponses IndicatorResponse[]
 
   @@map("form_indicators")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +248,7 @@ model ReportInstance {
 
   @@unique([unitId, referenceMonth])
   @@map("report_instances")
+  @@schema("public")
 }
 
 // Snapshot do indicador no momento da instanciacao do relatorio, para que
@@ -275,6 +291,7 @@ model IndicatorResponse {
 
   @@unique([reportInstanceId, formIndicatorId])
   @@map("indicator_responses")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +315,7 @@ model EvidenceFile {
   uploadedByUser    User               @relation("EvidenceUploadedBy", fields: [uploadedByUserId], references: [id])
 
   @@map("evidence_files")
+  @@schema("public")
 }
 
 // Contraprova indicador-por-indicador feita pelo Aprovador da Matriz.
@@ -314,6 +332,7 @@ model ValidationRecord {
   evidenceFiles     EvidenceFile[]
 
   @@map("validation_records")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +357,7 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+  @@schema("public")
 }
 
 // ---------------------------------------------------------------------------
@@ -358,4 +378,5 @@ model AuditLog {
 
   @@index([tableName, recordId])
   @@map("audit_logs")
+  @@schema("public")
 }

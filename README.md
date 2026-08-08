@@ -127,7 +127,30 @@ O RBAC do frontend é focado em UX (oculta ações que o usuário não pode faze
    npm start
    ```
 
-   *O comando subirá o Postgres + MinIO via Docker, aplicará migrações Prisma, executará os seeds iniciais, iniciará API e Web em background e validará o Healthcheck.*
+   *O comando subirá o Postgres + MinIO + ClamAV via Docker, aplicará migrações Prisma, provisionará os buckets de evidência (imutável e quarentena), executará os seeds iniciais, iniciará API e Web em background e validará o Healthcheck.*
+
+---
+
+## Custódia da chave de selagem (Ed25519)
+
+O selo de integridade dos documentos exportados (Fase 9) é assinado com uma chave Ed25519. A
+chave privada **nunca** entra no repositório nem em variável de ambiente — `SEALING_PRIVATE_KEY_PATH`
+guarda apenas a **referência** ao arquivo (montado com permissão restrita em desenvolvimento; em
+produção, o caminho aponta para o material entregue por um serviço de gestão de chaves).
+
+Gerando o par em desenvolvimento (Ed25519 via `node:crypto`, sem dependência externa):
+
+```bash
+node -e "const {generateKeyPairSync}=require('crypto');const {privateKey}=generateKeyPairSync('ed25519');console.log(privateKey.export({type:'pkcs8',format:'pem'}))" > /caminho/seguro/sealing-active.pem
+chmod 600 /caminho/seguro/sealing-active.pem
+```
+
+Aponte `SEALING_PRIVATE_KEY_PATH` para esse arquivo e `SEALING_KEY_ID` para um identificador
+estável do par (ex.: `seal-2026-01`). Ao rotacionar: gere um novo par sob um novo `keyId`, mova a
+chave **pública** do par anterior para `retired/<keyId-anterior>.pub.pem` no mesmo diretório (nunca
+a privada — depois da rotação ela não assina mais nada) e só então atualize `SEALING_KEY_ID` para o
+novo par. Selos emitidos sob um `keyId` aposentado continuam verificáveis indefinidamente
+(`key-custody.service.ts`, FR-104).
 
 ---
 
