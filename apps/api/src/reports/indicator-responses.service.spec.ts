@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { GoalOperator, ReportStatus, RoleName } from '@prisma/client';
+import { GoalOperator, InheritanceState, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,7 +9,8 @@ describe('IndicatorResponsesService', () => {
   let service: IndicatorResponsesService;
   let findUniqueMock: jest.Mock;
   let runWithAuditContextMock: jest.Mock;
-  let txUpdateMock: jest.Mock;
+  let versionCreateMock: jest.Mock;
+  let responseUpdateMock: jest.Mock;
 
   const elaborador: AuthenticatedUser = {
     id: 'elaborador-1',
@@ -29,13 +30,19 @@ describe('IndicatorResponsesService', () => {
     snapshotGoalOperator: GoalOperator.LTE,
     snapshotGoalValue: 5,
     variableValues: {},
+    criticalAnalysis: null,
+    actionPlan: null,
   };
 
   beforeEach(() => {
     findUniqueMock = jest.fn();
-    txUpdateMock = jest.fn().mockResolvedValue({ id: 'response-1' });
+    versionCreateMock = jest.fn().mockResolvedValue({ id: 'version-2' });
+    responseUpdateMock = jest.fn().mockResolvedValue({ id: 'response-1' });
     runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
-      fn({ indicatorResponse: { update: txUpdateMock } }),
+      fn({
+        indicatorResponseVersion: { create: versionCreateMock },
+        indicatorResponse: { update: responseUpdateMock },
+      }),
     );
     const prisma = {
       indicatorResponse: { findUnique: findUniqueMock },
@@ -81,14 +88,36 @@ describe('IndicatorResponsesService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  test('persists a partial update without calculating when not all variables are answered yet', async () => {
+  test('persists a partial update without calculating when not all variables are answered yet, with the exact reason (US1-5, FR-028)', async () => {
     findUniqueMock.mockResolvedValue(baseResponse);
 
     await service.updateValues('response-1', elaborador, { variableValues: { CA: 10 } });
 
-    expect(txUpdateMock).toHaveBeenCalledWith({
+    expect(versionCreateMock).toHaveBeenCalledWith({
+      data: {
+        indicatorResponseId: 'response-1',
+        variableValues: { CA: 10 },
+        calculatedValue: null,
+        calculationFailureReason: 'Aguardando valor de: CB',
+        isCompliant: null,
+        criticalAnalysis: null,
+        actionPlan: null,
+        authoredByUserId: elaborador.id,
+        inheritanceState: InheritanceState.NAO_HERDADO,
+        unresolvedInheritedKeys: [],
+        originLegacy: false,
+      },
+    });
+    expect(responseUpdateMock).toHaveBeenCalledWith({
       where: { id: 'response-1' },
-      data: { variableValues: { CA: 10 }, calculatedValue: null, isCompliant: null, updatedByUserId: elaborador.id },
+      data: expect.objectContaining({
+        variableValues: { CA: 10 },
+        calculatedValue: null,
+        calculationFailureReason: 'Aguardando valor de: CB',
+        isCompliant: null,
+        currentVersionId: 'version-2',
+        updatedByUserId: elaborador.id,
+      }),
     });
   });
 
@@ -97,14 +126,69 @@ describe('IndicatorResponsesService', () => {
 
     await service.updateValues('response-1', elaborador, { variableValues: { CB: 2 } });
 
-    expect(txUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'response-1' },
-      data: {
+    expect(versionCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
         variableValues: { CA: 10, CB: 2 },
         calculatedValue: 20,
+        calculationFailureReason: null,
         isCompliant: false,
-        updatedByUserId: elaborador.id,
-      },
+      }),
+    });
+  });
+
+  // Cenario US1-6 (Principio III): 0 e uma medicao legitima, indistinguivel
+  // de qualquer outro numero apurado — nao pode ser tratado como ausencia.
+  test('accepts 0 as a legitimate measured value and calculates normally (US1-6, Principio III)', async () => {
+    findUniqueMock.mockResolvedValue({ ...baseResponse, variableValues: { CA: 10 } });
+
+    await service.updateValues('response-1', elaborador, { variableValues: { CB: 0 } });
+
+    expect(versionCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        variableValues: { CA: 10, CB: 0 },
+        calculatedValue: 0,
+        isCompliant: true,
+        calculationFailureReason: null,
+      }),
+    });
+  });
+
+  // Cenario US1-5 (FR-028): denominador zero com todas as variaveis
+  // presentes nao lanca excecao nem aborta a gravacao — persiste ausencia
+  // de resultado com o motivo exato, conformidade indefinida.
+  test('persists calculation failure with the exact reason instead of throwing when the formula is impossible (division by zero)', async () => {
+    findUniqueMock.mockResolvedValue({ ...baseResponse, variableValues: { CB: 10 } });
+
+    await service.updateValues('response-1', elaborador, { variableValues: { CA: 0 } });
+
+    expect(versionCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        variableValues: { CA: 0, CB: 10 },
+        calculatedValue: null,
+        calculationFailureReason: 'Formula resultou em divisao por zero',
+        isCompliant: null,
+      }),
+    });
+  });
+
+  // FR-031: o arredondamento de exibicao nunca decide conformidade em valor
+  // de fronteira. 97,995 contra meta 98 (GTE) e NAO conforme em precisao
+  // decimal — um arredondamento previo a 2 casas ("98,00") inverteria
+  // erroneamente esse resultado para conforme.
+  test('decides boundary compliance on full decimal precision, never on display rounding (FR-031)', async () => {
+    findUniqueMock.mockResolvedValue({
+      ...baseResponse,
+      snapshotVariableKeys: ['CA'],
+      snapshotFormulaExpression: 'CA',
+      snapshotGoalOperator: GoalOperator.GTE,
+      snapshotGoalValue: 98,
+      variableValues: {},
+    });
+
+    await service.updateValues('response-1', elaborador, { variableValues: { CA: 97.995 } });
+
+    expect(versionCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({ calculatedValue: 97.995, isCompliant: false }),
     });
   });
 });

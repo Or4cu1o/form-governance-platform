@@ -82,6 +82,37 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   registro consultável de falha de notificação — serviço, operação, causa (FR-123), destinatários e
   a `ReportInstance` afetada (FR-112) — substituindo o `logger.error` isolado de
   `NotificationsService`.
+- `InheritanceService` (T046, `apps/api/src/reports/inheritance.service.ts`): herança de dados
+  estruturais estáveis por **chave declarada** — chave nova na definição fica `NAO_PREENCHIDO`
+  (nunca zero, nunca valor de outra chave) e a resposta é marcada `HERDADO`/`HERDADO_PARCIAL`
+  (FR-021 a FR-025). Injetado em `ReportLifecycleService.openPeriodForUnit`, substituindo o clone
+  bruto de `variableValues` que existia até aqui.
+- Gatilho de fechamento automático de `IndicatorResponseVersion` (T047, migração
+  `20260810090000_add_indicator_response_version_close_trigger`): função `SECURITY DEFINER`
+  (dona `formops`) que fecha a versão corrente anterior (`valid_to`) em todo `INSERT` de uma nova —
+  necessário porque `UPDATE` está revogado em `indicator_response_version` para `formops_app`
+  desde T035; a aplicação só tem privilégio de `INSERT`.
+- Três colunas de projeção em `IndicatorResponse` (T047, migração
+  `20260810091000_add_indicator_response_projection_fields`): `calculationFailureReason`,
+  `inheritanceState`, `unresolvedInheritedKeys` — espelham os campos de mesmo nome em
+  `IndicatorResponseVersion`, para a tela exibi-los na própria linha do indicador sem join extra.
+- `AntivirusService` (T050, `apps/api/src/evidence/antivirus.service.ts`): integra o daemon ClamAV
+  (`clamscan`, já instalado em T004) via TCP — veredito `PENDENTE` → `LIBERADO` (promove ao bucket
+  imutável com Object Lock) | `BLOQUEADO` (guarda pericial de `SystemSetting.forensicHoldYears`,
+  nunca promove). `@Cron('*/2 * * * *')` interno varre evidência `PENDENTE`.
+- `S3Service` reescrito para os dois buckets reais de evidência (T049/T050): `uploadToQuarantine`,
+  `downloadObject`, `promoteToImmutable` (cópia com Object Lock + remoção da quarentena),
+  substituindo o bucket único legado usado até aqui por `EvidenceService`/`ValidationService`.
+- `EvidenceService.getDownloadUrl` (T049a) recusa com 403 quando `scanStatus = BLOQUEADO` e
+  registra `AccessLog` (`DOWNLOAD_EVIDENCIA`) em toda leitura, sucesso ou não.
+- `EvidenceService.deactivate` (T049b, rota `POST evidence-files/:id/deactivate`): desativação
+  lógica de evidência com autor e data — some da superfície de trabalho, permanece íntegra em
+  auditoria/exportação/analítica.
+- `ReportInstancesService.assertNoEvidencePendingVerification` (T045/T052): `submitForReview`
+  recusa com 400 enquanto houver `EvidenceFile` ativo com `scanStatus = PENDENTE` (FR-038).
+- Badge "Herdado — confira"/"Herdado parcialmente — confira" e motivo de falha de cálculo na
+  própria linha do indicador (T053, `IndicatorResponseCard.tsx`); estado "verificação pendente"/
+  "bloqueado" na lista de evidências e mensagem específica de recusa por tipo no upload (T054).
 
 ### Changed
 
@@ -153,3 +184,11 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   correção, dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito
   funcional, não tarefa separada); T168 (assinatura binária de evidência), T169 (cargo funcional no
   documento selado) e T170 (registro consultável de falha de notificação) concluídas nesta sessão.
+- **Fase 3 — US1 (P1), MVP** (T041-T054): concluída. Herança por chave (T046) e gravação
+  append-only via `IndicatorResponseVersion` (T047, com gatilho de fechamento automático — achado
+  de infraestrutura necessário, não previsto no texto literal da tarefa); cálculo impossível não
+  aborta mais a gravação (T042); quarentena de evidência, antivírus via ClamAV, promoção ao bucket
+  imutável, retenção carimbada no upload e desativação lógica (T049-T051); bloqueio de submissão
+  com evidência pendente (T045/T052); sinalização de herança, motivo de cálculo e estado de
+  verificação de segurança no frontend (T053-T054). T044 e T045a eram testes já cobertos por
+  T168 e pela integração via controller, respectivamente — extensão em vez de recriação.

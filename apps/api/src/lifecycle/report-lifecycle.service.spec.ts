@@ -1,8 +1,9 @@
-import { GoalOperator, UnitLevel } from '@prisma/client';
+import { GoalOperator, InheritanceState, UnitLevel } from '@prisma/client';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../common/services/system-actor';
+import { InheritanceService } from '../reports/inheritance.service';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
 // Teste de integracao contra um Postgres real (nao mockado) — segue o
@@ -14,7 +15,8 @@ describe('ReportLifecycleService (integration)', () => {
   const prisma = new PrismaService();
   const platformSettingsService = new PlatformSettingsService(prisma);
   const auditContextService = new AuditContextService(prisma);
-  const service = new ReportLifecycleService(prisma, platformSettingsService, auditContextService);
+  const inheritanceService = new InheritanceService();
+  const service = new ReportLifecycleService(prisma, platformSettingsService, auditContextService, inheritanceService);
 
   let unitId: string;
   let formTemplateId: string;
@@ -111,6 +113,8 @@ describe('ReportLifecycleService (integration)', () => {
     const responses = await prisma.indicatorResponse.findMany({ where: { reportInstanceId: report!.id } });
     expect(responses).toHaveLength(2);
     expect(responses.every((r) => !r.isClonedFromResident)).toBe(true);
+    expect(responses.every((r) => r.inheritanceState === InheritanceState.NAO_HERDADO)).toBe(true);
+    expect(responses.every((r) => r.currentVersionId !== null)).toBe(true);
   });
 
   test('is idempotent: calling it again for the same unit/month returns the existing instance', async () => {
@@ -152,11 +156,13 @@ describe('ReportLifecycleService (integration)', () => {
     });
     expect(residentResponse.isClonedFromResident).toBe(true);
     expect(residentResponse.variableValues).toEqual({ QTD: 42 });
+    expect(residentResponse.inheritanceState).toBe(InheritanceState.HERDADO);
 
     const volatileResponse = await prisma.indicatorResponse.findFirstOrThrow({
       where: { reportInstanceId: augustReport!.id, formIndicatorId: volatileIndicatorId },
     });
     expect(volatileResponse.isClonedFromResident).toBe(false);
     expect(volatileResponse.variableValues).toEqual({});
+    expect(volatileResponse.inheritanceState).toBe(InheritanceState.NAO_HERDADO);
   });
 });

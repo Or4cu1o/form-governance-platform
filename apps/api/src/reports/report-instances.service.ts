@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { IndicatorValidationStatus, Prisma, ReportStatus, RoleName } from '@prisma/client';
+import { EvidenceScanStatus, IndicatorValidationStatus, Prisma, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -173,7 +173,26 @@ export class ReportInstancesService {
     return report;
   }
 
+  // FR-038 (cenario US1-8): o relatorio nao avanca de etapa enquanto houver
+  // anexo com verificacao de seguranca pendente — checado antes de
+  // qualquer transicao de status, para nao autorizar em silencio.
+  private async assertNoEvidencePendingVerification(reportInstanceId: string): Promise<void> {
+    const pending = await this.prisma.evidenceFile.findFirst({
+      where: {
+        isActive: true,
+        scanStatus: EvidenceScanStatus.PENDENTE,
+        indicatorResponse: { reportInstanceId },
+      },
+    });
+    if (pending) {
+      throw new BadRequestException(
+        'Existe evidencia com verificacao de seguranca pendente — a submissao so pode avancar apos a conclusao da verificacao',
+      );
+    }
+  }
+
   async submitForReview(id: string, user: AuthenticatedUser) {
+    await this.assertNoEvidencePendingVerification(id);
     const updated = await this.transition(
       id,
       user,

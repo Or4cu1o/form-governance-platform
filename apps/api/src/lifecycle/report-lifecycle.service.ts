@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ReportStatus, Unit } from '@prisma/client';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
+import { InheritanceService } from '../reports/inheritance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getMandatoryNationalHolidays, getNthBusinessDayOfMonth, toUtcMidnight } from './business-days.util';
 
@@ -22,6 +23,7 @@ export class ReportLifecycleService {
     private readonly prisma: PrismaService,
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly auditContextService: AuditContextService,
+    private readonly inheritanceService: InheritanceService,
   ) {}
 
   async openPeriodForUnit(unit: Unit, referenceMonth: Date) {
@@ -82,8 +84,12 @@ export class ReportLifecycleService {
           (response) => response.formIndicatorId === indicator.id,
         );
         const shouldCloneResidentState = indicator.isResidentState && Boolean(previousResponse);
+        const { variableValues, inheritanceState, unresolvedInheritedKeys } = this.inheritanceService.inheritValues(
+          indicator.variableKeys,
+          shouldCloneResidentState ? (previousResponse!.variableValues as Record<string, number>) : null,
+        );
 
-        await tx.indicatorResponse.create({
+        const response = await tx.indicatorResponse.create({
           data: {
             reportInstanceId: reportInstance.id,
             formIndicatorId: indicator.id,
@@ -94,7 +100,9 @@ export class ReportLifecycleService {
             snapshotGoalOperator: indicator.goalOperator,
             snapshotGoalValue: indicator.goalValue,
             snapshotScoreWeight: indicator.scoreWeight,
-            variableValues: shouldCloneResidentState ? (previousResponse!.variableValues as object) : {},
+            variableValues,
+            inheritanceState,
+            unresolvedInheritedKeys,
             isClonedFromResident: shouldCloneResidentState,
             // updatedAt deixou de ser auto-gerenciado pelo Prisma (A1):
             // IndicatorResponse e identidade estavel, nao sofre UPDATE
@@ -102,6 +110,26 @@ export class ReportLifecycleService {
             // escreve — aqui, a criacao inicial vazia do periodo.
             updatedAt: new Date(),
           },
+        });
+
+        // T046/T047: mesmo o valor inicial (herdado ou vazio) e uma versao
+        // real, nao so a projecao — senao a primeira edicao do elaborador
+        // (T047) fecharia uma versao anterior que nunca existiu. O gatilho
+        // de fechamento (20260810090000) so tem o que fechar se toda
+        // resposta nascer com uma versao.
+        const version = await tx.indicatorResponseVersion.create({
+          data: {
+            indicatorResponseId: response.id,
+            variableValues,
+            inheritanceState,
+            unresolvedInheritedKeys,
+            originLegacy: false,
+          },
+        });
+
+        await tx.indicatorResponse.update({
+          where: { id: response.id },
+          data: { currentVersionId: version.id },
         });
       }
 

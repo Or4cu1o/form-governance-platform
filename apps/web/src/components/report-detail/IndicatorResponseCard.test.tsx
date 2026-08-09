@@ -4,6 +4,7 @@ import { fireEvent } from '@testing-library/react';
 import { IndicatorResponseCard } from './IndicatorResponseCard';
 import { renderWithProviders } from '../../test/render-with-providers';
 import * as indicatorResponsesApi from '../../api/indicator-responses';
+import { ApiError } from '../../lib/api-error';
 import type { IndicatorResponse } from '../../types/api';
 
 vi.mock('../../api/indicator-responses');
@@ -21,8 +22,11 @@ const baseResponse: IndicatorResponse = {
   snapshotGoalValue: '99',
   variableValues: { uptimeMinutos: 1430, totalMinutos: 1440 },
   calculatedValue: '99.30',
+  calculationFailureReason: null,
   isCompliant: true,
   isClonedFromResident: false,
+  inheritanceState: 'NAO_HERDADO',
+  unresolvedInheritedKeys: [],
   validationStatus: 'EM_REVISAO',
   updatedByUserId: null,
   createdAt: '2026-03-01T00:00:00.000Z',
@@ -90,6 +94,85 @@ describe('IndicatorResponseCard', () => {
       <IndicatorResponseCard response={{ ...baseResponse, isCompliant: null }} reportInstanceId="report-1" isEditable={false} />,
     );
     expect(screen.getByText('Aguardando valores')).toBeInTheDocument();
+  });
+
+  // T054 (FR-037): estado de verificacao de seguranca pendente fica visivel
+  // na lista de evidencias, com rotulo textual (nao so cor, FR-125).
+  it('shows a pending security verification label for an evidence file awaiting antivirus scan', () => {
+    const withPendingEvidence: IndicatorResponse = {
+      ...baseResponse,
+      evidenceFiles: [
+        {
+          id: 'evidence-1',
+          indicatorResponseId: 'response-1',
+          validationRecordId: null,
+          fileKey: 'some-key.pdf',
+          fileName: 'comprovante.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 1024,
+          uploadedByUserId: 'user-1',
+          isActive: true,
+          scanStatus: 'PENDENTE',
+          createdAt: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+    };
+
+    renderWithProviders(
+      <IndicatorResponseCard response={withPendingEvidence} reportInstanceId="report-1" isEditable={false} />,
+    );
+
+    expect(screen.getByText('verificação pendente')).toBeInTheDocument();
+  });
+
+  // T054 (FR-040): arquivo bloqueado pelo antivirus fica visivelmente
+  // desabilitado — nao tenta baixar nem finge que o arquivo esta disponivel.
+  it('disables download and shows a blocked label for evidence blocked by antivirus', () => {
+    const withBlockedEvidence: IndicatorResponse = {
+      ...baseResponse,
+      evidenceFiles: [
+        {
+          id: 'evidence-2',
+          indicatorResponseId: 'response-1',
+          validationRecordId: null,
+          fileKey: 'some-key.pdf',
+          fileName: 'suspeito.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 2048,
+          uploadedByUserId: 'user-1',
+          isActive: true,
+          scanStatus: 'BLOQUEADO',
+          createdAt: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+    };
+
+    renderWithProviders(
+      <IndicatorResponseCard response={withBlockedEvidence} reportInstanceId="report-1" isEditable={false} />,
+    );
+
+    expect(screen.getByText('bloqueado')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /suspeito\.pdf/ })).toBeDisabled();
+  });
+
+  // T054 (FR-035): a recusa por tipo mostra o motivo especifico devolvido
+  // pelo backend, nao um erro generico.
+  it('shows the specific backend rejection reason when the upload is refused by type', async () => {
+    vi.mocked(indicatorResponsesApi.uploadIndicatorEvidence).mockRejectedValueOnce(
+      new ApiError(400, 'A extensao do arquivo nao corresponde ao tipo declarado (application/pdf).'),
+    );
+
+    renderWithProviders(<IndicatorResponseCard response={baseResponse} reportInstanceId="report-1" isEditable />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['conteudo'], 'evidencia.png', { type: 'application/pdf' });
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [file] } });
+    });
+
+    expect(
+      await screen.findByText('A extensao do arquivo nao corresponde ao tipo declarado (application/pdf).'),
+    ).toBeInTheDocument();
   });
 
   it('renders validation history entries when present', () => {

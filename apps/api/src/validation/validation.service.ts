@@ -67,7 +67,16 @@ export class ValidationService {
     }
     assertEvidenceFileSignatureMatches(file);
 
-    const fileKey = await this.s3Service.upload(file.buffer, file.originalname, file.mimetype);
+    // Mesma quarentena + retencao de EvidenceService.uploadForIndicatorResponse
+    // (T049/T051) — EvidenceFile e a mesma entidade fisica em ambos os
+    // casos, so muda a FK preenchida (validationRecordId vs
+    // indicatorResponseId); o ciclo de vida do arquivo (quarentena ->
+    // antivirus -> imutavel, retencao) nao pode divergir entre os dois.
+    const fileKey = await this.s3Service.uploadToQuarantine(file.buffer, file.originalname, file.mimetype);
+    const settings = await this.platformSettingsService.getSettings();
+    const retainUntil = new Date();
+    retainUntil.setUTCFullYear(retainUntil.getUTCFullYear() + settings.evidenceRetentionYears);
+
     return this.auditContextService.runWithAuditContext((tx) =>
       tx.evidenceFile.create({
         data: {
@@ -77,7 +86,8 @@ export class ValidationService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: user.id,
-          bucket: this.s3Service.getBucketName(),
+          bucket: this.s3Service.getQuarantineBucketName(),
+          retainUntil,
         },
       }),
     );

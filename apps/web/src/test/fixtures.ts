@@ -1,4 +1,4 @@
-import type { AuthenticatedUser, ReportInstance, ReportInstanceOverview, Unit } from '../types/api';
+import type { AuthenticatedUser, IndicatorResponse, ReportInstance, ReportInstanceOverview, Unit } from '../types/api';
 
 export function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
   return {
@@ -53,6 +53,34 @@ export function makeReportInstance(overrides: Partial<ReportInstance> = {}): Rep
     updatedAt: '2026-03-01T00:00:00.000Z',
     unit: makeUnit(),
     indicatorResponses: [],
+    ...overrides,
+  };
+}
+
+export function makeIndicatorResponse(overrides: Partial<IndicatorResponse> = {}): IndicatorResponse {
+  return {
+    id: 'response-1',
+    reportInstanceId: 'report-1',
+    formIndicatorId: 'indicator-1',
+    snapshotTitle: 'Disponibilidade de sistemas',
+    snapshotObjective: 'Medir uptime dos sistemas críticos',
+    snapshotVariableKeys: ['uptimeMinutos', 'totalMinutos'],
+    snapshotFormulaExpression: '(uptimeMinutos / totalMinutos) * 100',
+    snapshotGoalOperator: 'GTE',
+    snapshotGoalValue: '99',
+    variableValues: { uptimeMinutos: 1430, totalMinutos: 1440 },
+    calculatedValue: '99.30',
+    calculationFailureReason: null,
+    isCompliant: true,
+    isClonedFromResident: false,
+    inheritanceState: 'NAO_HERDADO',
+    unresolvedInheritedKeys: [],
+    validationStatus: 'EM_REVISAO',
+    updatedByUserId: null,
+    createdAt: '2026-03-01T00:00:00.000Z',
+    updatedAt: '2026-03-01T00:00:00.000Z',
+    evidenceFiles: [],
+    validationRecords: [],
     ...overrides,
   };
 }

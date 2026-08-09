@@ -7,6 +7,7 @@ describe('EvidenceController', () => {
   let controller: EvidenceController;
   let uploadForIndicatorResponseMock: jest.Mock;
   let getDownloadUrlMock: jest.Mock;
+  let deactivateMock: jest.Mock;
 
   const user: AuthenticatedUser = {
     id: 'elaborador-1',
@@ -22,9 +23,11 @@ describe('EvidenceController', () => {
   beforeEach(() => {
     uploadForIndicatorResponseMock = jest.fn().mockResolvedValue({ id: 'evidence-1' });
     getDownloadUrlMock = jest.fn().mockResolvedValue({ url: 'https://minio.local/signed-url' });
+    deactivateMock = jest.fn().mockResolvedValue({ id: 'evidence-1', isActive: false });
     const evidenceService = {
       uploadForIndicatorResponse: uploadForIndicatorResponseMock,
       getDownloadUrl: getDownloadUrlMock,
+      deactivate: deactivateMock,
     } as unknown as EvidenceService;
     controller = new EvidenceController(evidenceService);
   });
@@ -41,5 +44,12 @@ describe('EvidenceController', () => {
 
     expect(getDownloadUrlMock).toHaveBeenCalledWith('evidence-1', user);
     expect(result).toEqual({ url: 'https://minio.local/signed-url' });
+  });
+
+  test('deactivate delegates to EvidenceService with the evidence id and user', async () => {
+    const result = await controller.deactivate('evidence-1', user);
+
+    expect(deactivateMock).toHaveBeenCalledWith('evidence-1', user);
+    expect(result).toEqual({ id: 'evidence-1', isActive: false });
   });
 });

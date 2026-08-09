@@ -51,17 +51,38 @@ const EVIDENCE_SIGNATURE_CHECKS: Record<string, (buffer: Buffer) => boolean> = {
     buf.subarray(8, 12).toString('latin1') === 'WEBP',
 };
 
-// T168 — chamado pelo service (EvidenceService/ValidationService) antes de
-// qualquer escrita no S3/banco, com o buffer completo ja em memoria
+// T044/FR-035: "exigindo coerencia entre extensao, tipo declarado e
+// conteudo" — as tres pontas tem que combinar, nao so mimetype-vs-bytes.
+const EVIDENCE_ALLOWED_EXTENSIONS_BY_MIME_TYPE: Record<string, string[]> = {
+  'application/pdf': ['.pdf'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/webp': ['.webp'],
+};
+
+function extensionOf(filename: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot === -1 ? '' : filename.slice(lastDot).toLowerCase();
+}
+
+// T168/T044 — chamado pelo service (EvidenceService/ValidationService) antes
+// de qualquer escrita no S3/banco, com o buffer completo ja em memoria
 // (multer.memoryStorage, o default do FileInterceptor sem `storage`
 // explicito). O mimetype filter acima ja rejeitou tipos fora da lista
-// permitida; aqui a divergencia entre o que foi declarado e o que os bytes
-// realmente sao vira 400, sem gravar nada (FR-035).
+// permitida; aqui a divergencia entre extensao, tipo declarado e o que os
+// bytes realmente sao vira 400, sem gravar nada (FR-035, cenario US1-7).
 export function assertEvidenceFileSignatureMatches(file: Express.Multer.File): void {
-  const check = EVIDENCE_SIGNATURE_CHECKS[file.mimetype];
-  if (!check || !check(file.buffer)) {
+  const signatureCheck = EVIDENCE_SIGNATURE_CHECKS[file.mimetype];
+  if (!signatureCheck || !signatureCheck(file.buffer)) {
     throw new BadRequestException(
       `O conteudo do arquivo nao corresponde ao tipo declarado (${file.mimetype}).`,
+    );
+  }
+
+  const allowedExtensions = EVIDENCE_ALLOWED_EXTENSIONS_BY_MIME_TYPE[file.mimetype] ?? [];
+  if (!allowedExtensions.includes(extensionOf(file.originalname))) {
+    throw new BadRequestException(
+      `A extensao do arquivo nao corresponde ao tipo declarado (${file.mimetype}).`,
     );
   }
 }

@@ -382,20 +382,30 @@ model IndicatorResponse {
 
   variableValues       Json     @default("{}") @map("variable_values")
   calculatedValue      Decimal? @map("calculated_value") @db.Decimal(18, 4)
-  isCompliant          Boolean? @map("is_compliant")
-  isClonedFromResident Boolean  @default(false) @map("is_cloned_from_resident")
-  criticalAnalysis     String?  @map("critical_analysis")
-  actionPlan           String?  @map("action_plan")
+  // Motivo exato quando o calculo e impossivel (FR-028) — espelha o mesmo
+  // campo de IndicatorResponseVersion, para a tela (T053) exibi-lo na
+  // propria linha do indicador sem join adicional.
+  calculationFailureReason String?  @map("calculation_failure_reason")
+  isCompliant               Boolean? @map("is_compliant")
+  isClonedFromResident      Boolean  @default(false) @map("is_cloned_from_resident")
+  criticalAnalysis          String?  @map("critical_analysis")
+  actionPlan                String?  @map("action_plan")
+  // Espelham os campos de mesmo nome em IndicatorResponseVersion (FR-024,
+  // FR-025) — a sinalizacao "herdado, ainda nao conferido" precisa estar
+  // na propria linha para a tela nao depender de outra consulta.
+  inheritanceState         InheritanceState @default(NAO_HERDADO) @map("inheritance_state")
+  unresolvedInheritedKeys  String[]         @map("unresolved_inherited_keys")
 
   validationStatus IndicatorValidationStatus @default(EM_REVISAO) @map("validation_status")
 
   // Identidade estavel (A1): a resposta em si nunca sofre UPDATE de conteudo.
   // Aponta a versao com validTo IS NULL em IndicatorResponseVersion — a
   // unica fonte de verdade para o conteudo mutavel. Os campos acima
-  // (variableValues, calculatedValue, isCompliant, criticalAnalysis,
-  // actionPlan) permanecem fisicamente na tabela como PROJECAO da versao
-  // corrente, mantida pela mesma transacao que insere a versao nova —
-  // nunca escritos isoladamente.
+  // (variableValues, calculatedValue, calculationFailureReason, isCompliant,
+  // criticalAnalysis, actionPlan, inheritanceState, unresolvedInheritedKeys)
+  // permanecem fisicamente na tabela como PROJECAO da versao corrente,
+  // mantida pela mesma transacao que insere a versao nova — nunca escritos
+  // isoladamente.
   currentVersionId String?  @map("current_version_id")
   updatedByUserId  String?  @map("updated_by_user_id")
   createdAt        DateTime @default(now()) @map("created_at")

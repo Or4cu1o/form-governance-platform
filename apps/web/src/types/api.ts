@@ -10,6 +10,8 @@ export type IndicatorValidationStatus = 'EM_REVISAO' | 'PENDENTE_VALIDACAO' | 'A
 
 export type ValidationVerdict = 'APROVADO' | 'REPROVADO';
 
+export type InheritanceState = 'NAO_HERDADO' | 'HERDADO' | 'HERDADO_PARCIAL';
+
 export interface AuthenticatedUser {
   id: string;
   matricula: string;
@@ -113,6 +115,8 @@ export interface FormTemplate {
   topics?: FormTopic[];
 }
 
+export type EvidenceScanStatus = 'PENDENTE' | 'LIBERADO' | 'BLOQUEADO';
+
 export interface EvidenceFile {
   id: string;
   indicatorResponseId: string | null;
@@ -123,6 +127,7 @@ export interface EvidenceFile {
   sizeBytes: number;
   uploadedByUserId: string;
   isActive: boolean;
+  scanStatus: EvidenceScanStatus;
   createdAt: string;
 }
 
@@ -148,8 +153,11 @@ export interface IndicatorResponse {
   snapshotGoalValue: string;
   variableValues: Record<string, number>;
   calculatedValue: string | null;
+  calculationFailureReason: string | null;
   isCompliant: boolean | null;
   isClonedFromResident: boolean;
+  inheritanceState: InheritanceState;
+  unresolvedInheritedKeys: string[];
   validationStatus: IndicatorValidationStatus;
   updatedByUserId: string | null;
   createdAt: string;

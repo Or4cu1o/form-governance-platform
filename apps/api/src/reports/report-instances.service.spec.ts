@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { IndicatorValidationStatus, ReportStatus, RoleName } from '@prisma/client';
+import { EvidenceScanStatus, IndicatorValidationStatus, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -16,6 +16,7 @@ describe('ReportInstancesService', () => {
   let findUniqueUnitMock: jest.Mock;
   let updateMock: jest.Mock;
   let updateManyMock: jest.Mock;
+  let evidenceFileFindFirstMock: jest.Mock;
   let transactionMock: jest.Mock;
   let hasOrgWideReadAccessMock: jest.Mock;
   let getAccessibleUnitIdsMock: jest.Mock;
@@ -39,6 +40,7 @@ describe('ReportInstancesService', () => {
     findUniqueMock = jest.fn();
     updateMock = jest.fn();
     updateManyMock = jest.fn();
+    evidenceFileFindFirstMock = jest.fn().mockResolvedValue(null);
     transactionMock = jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ indicatorResponse: { updateMany: updateManyMock }, reportInstance: { update: updateMock } }),
     );
@@ -53,6 +55,7 @@ describe('ReportInstancesService', () => {
     const prisma = {
       reportInstance: { findMany: findManyMock, findUnique: findUniqueMock, update: updateMock },
       unit: { findUnique: findUniqueUnitMock },
+      evidenceFile: { findFirst: evidenceFileFindFirstMock },
     } as unknown as PrismaService;
     const auditContextService = { runWithAuditContext: transactionMock } as unknown as AuditContextService;
 
@@ -194,12 +197,26 @@ describe('ReportInstancesService', () => {
 
       await service.submitForReview('report-1', elaborador);
 
+      expect(evidenceFileFindFirstMock).toHaveBeenCalledWith({
+        where: { isActive: true, scanStatus: EvidenceScanStatus.PENDENTE, indicatorResponse: { reportInstanceId: 'report-1' } },
+      });
       expect(updateMock).toHaveBeenCalledWith({
         where: { id: 'report-1' },
         data: { status: ReportStatus.EM_REVISAO, submittedForReviewAt: expect.any(Date) },
         include: { unit: true },
       });
       expect(notifySubmittedForReviewMock).toHaveBeenCalled();
+    });
+
+    // Cenario US1-8 (FR-038): relatorio nao avanca de etapa enquanto houver
+    // anexo com verificacao de seguranca pendente.
+    test('throws BadRequestException and does not transition when an active evidence file is still PENDENTE', async () => {
+      findUniqueMock.mockResolvedValue({ id: 'report-1', unitId: 'unit-1', status: ReportStatus.PENDENTE });
+      evidenceFileFindFirstMock.mockResolvedValue({ id: 'evidence-1', scanStatus: EvidenceScanStatus.PENDENTE });
+
+      await expect(service.submitForReview('report-1', elaborador)).rejects.toThrow(BadRequestException);
+      expect(updateMock).not.toHaveBeenCalled();
+      expect(notifySubmittedForReviewMock).not.toHaveBeenCalled();
     });
   });
 

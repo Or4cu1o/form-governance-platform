@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ReportDetailPage } from './ReportDetailPage';
 import { renderWithProviders } from '../test/render-with-providers';
-import { makeReportInstance, makeUser } from '../test/fixtures';
+import { makeIndicatorResponse, makeReportInstance, makeUser } from '../test/fixtures';
 import * as reportsApi from '../api/reports';
+import * as indicatorResponsesApi from '../api/indicator-responses';
 import * as AuthContextModule from '../context/AuthContext';
 
 vi.mock('../api/reports');
+vi.mock('../api/indicator-responses');
+vi.mock('../api/evidence');
 vi.mock('../context/AuthContext', async () => {
   const actual = await vi.importActual<typeof import('../context/AuthContext')>('../context/AuthContext');
   return { ...actual, useAuth: vi.fn() };
@@ -103,5 +106,70 @@ describe('ReportDetailPage', () => {
 
     await screen.findByText(/Elaboração e revisão/);
     expect(screen.queryByText('Nota final do relatório')).not.toBeInTheDocument();
+  });
+
+  // T053 (FR-024/FR-025/FR-028): sinalizacao de heranca e motivo de falha
+  // de calculo aparecem na propria linha do indicador.
+  it('shows the inheritance badge and the exact calculation failure reason on the indicator line', async () => {
+    vi.mocked(AuthContextModule.useAuth).mockReturnValue({ user: makeUser(), isLoading: false, login: vi.fn(), logout: vi.fn() });
+    const partialIndicator = makeIndicatorResponse({
+      id: 'response-partial',
+      inheritanceState: 'HERDADO_PARCIAL',
+      calculatedValue: null,
+      isCompliant: null,
+      calculationFailureReason: 'Aguardando valor de: totalMinutos',
+    });
+    vi.mocked(reportsApi.getReportInstance).mockResolvedValueOnce(
+      makeReportInstance({ indicatorResponses: [partialIndicator] }),
+    );
+
+    renderDetail();
+
+    expect(await screen.findByText('Herdado parcialmente — confira')).toBeInTheDocument();
+    expect(screen.getByText('Aguardando valor de: totalMinutos')).toBeInTheDocument();
+  });
+
+  // FR-127: salvar um indicador nao pode disparar um refetch do relatorio
+  // inteiro nem alterar o outro indicador na tela — so o card afetado (e os
+  // totais derivados dele) reflete a mudanca.
+  it('patches only the saved indicator without refetching the whole report or touching the other indicator (FR-127)', async () => {
+    vi.mocked(AuthContextModule.useAuth).mockReturnValue({
+      user: makeUser({ role: 'ELABORADOR', primaryUnitId: 'unit-1' }),
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+    });
+    const responseA = makeIndicatorResponse({ id: 'response-a', snapshotTitle: 'Indicador A' });
+    const responseB = makeIndicatorResponse({
+      id: 'response-b',
+      snapshotTitle: 'Indicador B',
+      snapshotVariableKeys: ['minutosParados'],
+      variableValues: { minutosParados: 5 },
+    });
+    vi.mocked(reportsApi.getReportInstance).mockResolvedValueOnce(
+      makeReportInstance({ status: 'PENDENTE', unitId: 'unit-1', indicatorResponses: [responseA, responseB] }),
+    );
+    vi.mocked(indicatorResponsesApi.updateIndicatorResponseValues).mockResolvedValueOnce({
+      ...responseA,
+      variableValues: { uptimeMinutos: 1435, totalMinutos: 1440 },
+      calculatedValue: '99.65',
+    });
+
+    renderDetail();
+    await screen.findByText('Indicador A');
+    await screen.findByText('Indicador B');
+
+    const [uptimeInputA] = screen.getAllByLabelText('uptimeMinutos');
+    fireEvent.change(uptimeInputA, { target: { value: '1435' } });
+    const [saveButtonA] = screen.getAllByRole('button', { name: 'Salvar valores' });
+    await act(async () => {
+      fireEvent.click(saveButtonA);
+    });
+
+    expect(await screen.findByText('99,65')).toBeInTheDocument();
+    // Nenhum segundo carregamento do relatorio inteiro — so o PATCH pontual.
+    expect(reportsApi.getReportInstance).toHaveBeenCalledTimes(1);
+    // O indicador nao tocado mantem seu proprio valor intacto.
+    expect(screen.getByLabelText('minutosParados')).toHaveValue(5);
   });
 });

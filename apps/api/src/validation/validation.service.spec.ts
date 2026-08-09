@@ -59,8 +59,8 @@ describe('ValidationService', () => {
     } as unknown as PrismaService;
 
     const s3Service = {
-      upload: uploadMock,
-      getBucketName: jest.fn().mockReturnValue('formops-evidencias'),
+      uploadToQuarantine: uploadMock,
+      getQuarantineBucketName: jest.fn().mockReturnValue('formops-quarentena'),
     } as unknown as S3Service;
     const notificationsService = {
       notifyReportReproved: notifyReprovedMock,
@@ -73,6 +73,7 @@ describe('ValidationService', () => {
         slaApprovalBusinessDay: 10,
         slaReprovalExtensionDays: 2,
         slaDeflatorScore: 2,
+        evidenceRetentionYears: 10,
       }),
     } as unknown as PlatformSettingsService;
     const auditContextService = {
@@ -188,7 +189,8 @@ describe('ValidationService', () => {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: user.id,
-          bucket: 'formops-evidencias',
+          bucket: 'formops-quarentena',
+          retainUntil: expect.any(Date),
         },
       });
     });

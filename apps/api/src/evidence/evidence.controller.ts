@@ -42,4 +42,14 @@ export class EvidenceController {
   getDownloadUrl(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.evidenceService.getDownloadUrl(id, user);
   }
+
+  // T049b — mesmo prefixo "evidence-files/" da rota de download acima
+  // (nao "evidence/:id/deactivate" literal do texto da tarefa), para nao
+  // introduzir uma segunda convencao de nomeacao de rota so para esta
+  // entidade.
+  @Roles(RoleName.ELABORADOR, RoleName.REVISOR)
+  @Post('evidence-files/:id/deactivate')
+  deactivate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.evidenceService.deactivate(id, user);
+  }
 }
