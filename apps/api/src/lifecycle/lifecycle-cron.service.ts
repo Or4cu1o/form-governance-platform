@@ -4,8 +4,9 @@ import { ReportStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AUDIT_ORIGIN_CRON, runAsSystemActor } from '../common/services/system-actor';
 import { AuditContextService } from '../common/services/audit-context.service';
+import { PlatformSettingsService } from '../export/platform-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { getBusinessDayOrdinalInMonth, getMandatoryNationalHolidays } from './business-days.util';
+import { getBusinessDayOrdinalInMonth, getHolidaysForYear } from './business-days.util';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
 function firstDayOfMonthUtc(date: Date): Date {
@@ -25,6 +26,7 @@ export class LifecycleCronService {
     private readonly reportLifecycleService: ReportLifecycleService,
     private readonly notificationsService: NotificationsService,
     private readonly auditContextService: AuditContextService,
+    private readonly platformSettingsService: PlatformSettingsService,
   ) {}
 
   @Cron('0 6 * * 1-5')
@@ -39,7 +41,8 @@ export class LifecycleCronService {
       AUDIT_ORIGIN_CRON,
       async () => {
         const today = new Date();
-        const holidays = getMandatoryNationalHolidays(today.getUTCFullYear());
+        const settings = await this.platformSettingsService.getSettings();
+        const holidays = getHolidaysForYear(today.getUTCFullYear(), settings.includeOptionalHolidays);
         const ordinal = getBusinessDayOrdinalInMonth(today, holidays);
 
         if (ordinal === null) {

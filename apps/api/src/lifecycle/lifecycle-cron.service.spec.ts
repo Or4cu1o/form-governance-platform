@@ -3,6 +3,7 @@ import * as businessDaysUtil from './business-days.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditContextService } from '../common/services/audit-context.service';
+import { PlatformSettingsService } from '../export/platform-settings.service';
 import { LifecycleCronService } from './lifecycle-cron.service';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
@@ -26,8 +27,17 @@ describe('LifecycleCronService', () => {
     const reportLifecycleService = { openPeriodForUnit: openPeriodForUnitMock } as unknown as ReportLifecycleService;
     const notificationsService = { notifySlaOverdue: notifySlaOverdueMock } as unknown as NotificationsService;
     const auditContextService = new AuditContextService({} as unknown as PrismaService);
+    const platformSettingsService = {
+      getSettings: jest.fn().mockResolvedValue({ includeOptionalHolidays: false }),
+    } as unknown as PlatformSettingsService;
 
-    service = new LifecycleCronService(prisma, reportLifecycleService, notificationsService, auditContextService);
+    service = new LifecycleCronService(
+      prisma,
+      reportLifecycleService,
+      notificationsService,
+      auditContextService,
+      platformSettingsService,
+    );
   });
 
   afterEach(() => {

@@ -4,7 +4,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { assertEvidenceFileSignatureMatches } from '../common/evidence-upload.constants';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
-import { addBusinessDays, getMandatoryNationalHolidays } from '../lifecycle/business-days.util';
+import { addBusinessDays, getHolidaysForYear } from '../lifecycle/business-days.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportSubmissionService } from '../reports/report-submission.service';
@@ -150,7 +150,7 @@ export class ValidationService {
 
     const updated = await this.auditContextService.runWithAuditContext(async (tx) => {
       if (hasRejection) {
-        const holidays = getMandatoryNationalHolidays(new Date().getUTCFullYear());
+        const holidays = getHolidaysForYear(new Date().getUTCFullYear(), settings.includeOptionalHolidays);
         const slaExtensionDueDate = addBusinessDays(new Date(), settings.slaReprovalExtensionDays, holidays);
         // US2-7: so o REPROVADO volta a exigir correcao. O APROVADO
         // nao-alterado permanece aprovado — so recua se for editado depois

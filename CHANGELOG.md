@@ -30,6 +30,14 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   (`ExportSeal`/`ExportSealRevocation`), ainda sem serviço de aplicação (schema apenas).
 - Sete parâmetros operacionais novos em `SystemSetting` (retenção de evidência, feriados
   facultativos, limites de amplitude de consulta de auditoria, regra de outlier, guarda pericial).
+- Pontos facultativos móveis (Carnaval, Corpus Christi) no motor de dias úteis
+  (`getOptionalPontosFacultativos`/`getHolidaysForYear`), respeitando
+  `SystemSetting.includeOptionalHolidays` (desligado por padrão) na abertura de período, na
+  extensão de prazo pós-reprova e no cron diário do motor de SLA.
+- Filtros de período de referência (`type="month"`) e busca por sigla/nome de unidade em
+  `ReportsPage`, ligados aos parâmetros que o backend já aceitava sem UI correspondente.
+- Indicador de proximidade e estouro de prazo da fase corrente (`DeadlineBadge`) em
+  `ReportDetailPage`, além do binário atrasado/no prazo já existente.
 
 - `AuditContextService` (`AsyncLocalStorage`), substituindo `PrismaService.runWithAuditActor`:
   toda escrita auditada agora carrega contexto de requisição completo (usuário, IP, User-Agent,
@@ -229,3 +237,11 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   submissões no frontend (T066/T067, com T066 implementado em `IndicatorResponseCard.tsx` em vez de
   `ValidationDetailPage.tsx`, que não edita valores de indicador). T059 já estava coberta pelo
   mecanismo de T170 — testado ponto a ponto para `notifySubmittedForReview`.
+- **Fase 5 — US3 (P3)** (T070-T077): concluída. Congelamento de nota provado por teste dedicado
+  (T070, `score-freeze.spec.ts`) — os mocks omitem a relação `formIndicator`, então uma regressão
+  que voltasse a ler o catálogo vivo quebraria por acesso a `undefined`, não aprovaria um valor
+  errado silenciosamente; T072 e T073 já estavam satisfeitas em `validation.service.ts` e
+  `ReportSubmissionService` respectivamente (T073 mirava `report-lifecycle.service.ts`, que nunca
+  aferiu pontualidade); pontos facultativos móveis e `includeOptionalHolidays` (T071/T074); filtros
+  de período/busca e indicador de proximidade de prazo no frontend (T076/T077, com T077 implementado
+  em `ReportDetailPage.tsx` via novo componente `DeadlineBadge`).

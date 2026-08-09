@@ -54,6 +54,24 @@ export function getMandatoryNationalHolidays(year: number): Date[] {
   ];
 }
 
+// Pontos facultativos moveis (Carnaval seg+ter, Corpus Christi) — desligados
+// por padrao (SystemSetting.includeOptionalHolidays = false, FR-015) porque
+// variam por orgao/municipio; quando a organizacao liga o parametro, entram
+// no mesmo calculo de dia util que os feriados nacionais obrigatorios.
+export function getOptionalPontosFacultativos(year: number): Date[] {
+  const easter = computeEasterSunday(year);
+  return [
+    addDaysUtc(easter, -48), // Segunda-feira de Carnaval
+    addDaysUtc(easter, -47), // Terca-feira de Carnaval
+    addDaysUtc(easter, 60), // Corpus Christi
+  ];
+}
+
+export function getHolidaysForYear(year: number, includeOptionalHolidays: boolean): Date[] {
+  const mandatory = getMandatoryNationalHolidays(year);
+  return includeOptionalHolidays ? [...mandatory, ...getOptionalPontosFacultativos(year)] : mandatory;
+}
+
 export function isWeekend(date: Date): boolean {
   const day = date.getUTCDay();
   return day === 0 || day === 6;

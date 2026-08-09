@@ -11,7 +11,7 @@ import { formatDateTime, formatNumber, formatReferenceMonth } from '../lib/forma
 import { getRelevantDeadline } from '../lib/report-deadline';
 import { buildLastSixMonthsScoreTrend } from '../lib/score-trend';
 import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE, REPORT_SUBMISSION_STAGE_LABEL } from '../lib/status';
-import { Button, EmptyState, Select, Spinner, StatusBadge, Table, TBody, TD, TH, THead, TR, useToast } from '../components/ui';
+import { Button, EmptyState, Input, Select, Spinner, StatusBadge, Table, TBody, TD, TH, THead, TR, useToast } from '../components/ui';
 import type { ReportStatus } from '../types/api';
 
 export function ReportsPage() {
@@ -20,6 +20,9 @@ export function ReportsPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [status, setStatus] = useState<ReportStatus | ''>('');
+  const [search, setSearch] = useState('');
+  const [referenceMonthFrom, setReferenceMonthFrom] = useState('');
+  const [referenceMonthTo, setReferenceMonthTo] = useState('');
 
   const startMutation = useMutation({
     mutationFn: startCurrentReportInstance,
@@ -35,11 +38,14 @@ export function ReportsPage() {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['my-report-instances', user?.primaryUnitId, status],
+    queryKey: ['my-report-instances', user?.primaryUnitId, status, search, referenceMonthFrom, referenceMonthTo],
     queryFn: () =>
       listReportInstances({
         unitId: user!.primaryUnitId,
         status: status || undefined,
+        search: search.trim() || undefined,
+        referenceMonthFrom: referenceMonthFrom ? `${referenceMonthFrom}-01` : undefined,
+        referenceMonthTo: referenceMonthTo ? `${referenceMonthTo}-01` : undefined,
         sortBy: 'referenceMonth',
         sortOrder: 'desc',
       }),
@@ -141,7 +147,7 @@ export function ReportsPage() {
           </div>
         )}
 
-        <div className="flex items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="status" className="text-xs font-medium text-ink-muted">
               Status
@@ -154,6 +160,40 @@ export function ReportsPage() {
                 </option>
               ))}
             </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="referenceMonthFrom" className="text-xs font-medium text-ink-muted">
+              Período de (mês)
+            </label>
+            <Input
+              id="referenceMonthFrom"
+              type="month"
+              value={referenceMonthFrom}
+              onChange={(event) => setReferenceMonthFrom(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="referenceMonthTo" className="text-xs font-medium text-ink-muted">
+              Período até (mês)
+            </label>
+            <Input
+              id="referenceMonthTo"
+              type="month"
+              value={referenceMonthTo}
+              onChange={(event) => setReferenceMonthTo(event.target.value)}
+            />
+          </div>
+          <div className="flex min-w-[220px] flex-col gap-1.5">
+            <label htmlFor="search" className="text-xs font-medium text-ink-muted">
+              Buscar unidade
+            </label>
+            <Input
+              id="search"
+              type="search"
+              placeholder="Sigla ou nome da unidade"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
         </div>
 

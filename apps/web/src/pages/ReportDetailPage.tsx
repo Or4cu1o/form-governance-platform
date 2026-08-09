@@ -3,10 +3,12 @@ import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
+import { DeadlineBadge } from '../components/report-detail/DeadlineBadge';
 import { IndicatorResponseCard } from '../components/report-detail/IndicatorResponseCard';
 import { useAuth } from '../context/AuthContext';
 import { getReportInstance, submitForApproval, submitForReview } from '../api/reports';
 import { formatDateTime, formatNumber, formatReferenceMonth } from '../lib/format';
+import { getRelevantDeadline } from '../lib/report-deadline';
 import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE } from '../lib/status';
 import { Button, EmptyState, ProgressMeter, Spinner, StatusBadge, useToast } from '../components/ui';
 import type { ProgressMeterSegment } from '../components/ui';
@@ -90,6 +92,7 @@ export function ReportDetailPage() {
   const isEditable = canSubmitForReview || canSubmitForApproval;
   const wasReproved = report.status === 'EM_REVISAO' && report.reprovalCount > 0;
 
+  const deadline = getRelevantDeadline(report);
   const allResponses = report.indicatorResponses ?? [];
   const filledResponses = allResponses.filter((response) => response.calculatedValue !== null);
   const compliantCount = filledResponses.filter((response) => response.isCompliant === true).length;
@@ -111,6 +114,7 @@ export function ReportDetailPage() {
           <div className="flex items-center gap-4">
             <ProgressMeter segments={progressSegments} total={allResponses.length} label="indicadores preenchidos" />
             <StatusBadge tone={REPORT_STATUS_TONE[report.status]} label={REPORT_STATUS_LABEL[report.status]} />
+            <DeadlineBadge deadline={deadline} />
             {canSubmitForReview && (
               <Button isLoading={submitReviewMutation.isPending} onClick={() => submitReviewMutation.mutate()}>
                 Enviar para revisão

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ReportsPage } from './ReportsPage';
 import { renderWithProviders } from '../test/render-with-providers';
@@ -106,6 +106,30 @@ describe('ReportsPage', () => {
 
     expect(await screen.findByText('Fora do prazo')).toBeInTheDocument();
     expect(screen.getByText('No prazo')).toBeInTheDocument();
+  });
+
+  // T076: os controles ja disparam a mesma requisicao que o backend
+  // (report-instances.service.ts) ja aceita — search e referenceMonthFrom/To.
+  it('wires the search and reference-month filters to the list request', async () => {
+    vi.mocked(AuthContextModule.useAuth).mockReturnValue({ user: makeUser(), isLoading: false, login: vi.fn(), logout: vi.fn() });
+    vi.mocked(reportsApi.listReportInstances).mockResolvedValue([makeReportInstance()]);
+
+    renderReports();
+    await screen.findByRole('table');
+
+    fireEvent.change(screen.getByLabelText('Buscar unidade'), { target: { value: 'TI' } });
+    fireEvent.change(screen.getByLabelText('Período de (mês)'), { target: { value: '2026-01' } });
+    fireEvent.change(screen.getByLabelText('Período até (mês)'), { target: { value: '2026-06' } });
+
+    await waitFor(() => {
+      expect(reportsApi.listReportInstances).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          search: 'TI',
+          referenceMonthFrom: '2026-01-01',
+          referenceMonthTo: '2026-06-01',
+        }),
+      );
+    });
   });
 
   it('shows the 6-month score trend chart above the report list', async () => {

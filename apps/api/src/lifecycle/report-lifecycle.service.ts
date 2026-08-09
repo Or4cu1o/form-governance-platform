@@ -4,7 +4,7 @@ import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { InheritanceService } from '../reports/inheritance.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { getMandatoryNationalHolidays, getNthBusinessDayOfMonth, toUtcMidnight } from './business-days.util';
+import { getHolidaysForYear, getNthBusinessDayOfMonth, toUtcMidnight } from './business-days.util';
 
 function previousMonthUtc(referenceMonth: Date): Date {
   return new Date(Date.UTC(referenceMonth.getUTCFullYear(), referenceMonth.getUTCMonth() - 1, 1));
@@ -42,8 +42,8 @@ export class ReportLifecycleService {
 
     const year = normalizedMonth.getUTCFullYear();
     const monthIndex0 = normalizedMonth.getUTCMonth();
-    const holidays = getMandatoryNationalHolidays(year);
     const settings = await this.platformSettingsService.getSettings();
+    const holidays = getHolidaysForYear(year, settings.includeOptionalHolidays);
 
     const elaborationDueDate = getNthBusinessDayOfMonth(
       year,
