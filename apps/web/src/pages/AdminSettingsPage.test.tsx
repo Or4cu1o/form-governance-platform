@@ -15,6 +15,13 @@ const baseSettings = {
   slaApprovalBusinessDay: 10,
   slaReprovalExtensionDays: 2,
   slaDeflatorScore: 2,
+  evidenceRetentionYears: 10,
+  includeOptionalHolidays: false,
+  auditMaxRangeMonths: 24,
+  auditDetailedMaxRangeMonths: 12,
+  auditExactCountThreshold: 10000,
+  outlierRule: 'IQR',
+  forensicHoldYears: 1,
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 

@@ -9,5 +9,6 @@ import { FormTopicsService } from './form-topics.service';
 @Module({
   controllers: [FormTemplatesController, FormTopicsController, FormIndicatorsController],
   providers: [FormTemplatesService, FormTopicsService, FormIndicatorsService],
+  exports: [FormIndicatorsService],
 })
 export class FormsModule {}

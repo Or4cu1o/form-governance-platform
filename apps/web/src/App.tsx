@@ -4,6 +4,7 @@ import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { AdminAccessPage } from './pages/AdminAccessPage';
+import { AdminCatalogPage } from './pages/AdminCatalogPage';
 import { AdminFormsPage } from './pages/AdminFormsPage';
 import { AdminSettingsPage } from './pages/AdminSettingsPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -40,6 +41,7 @@ function App() {
                   <Route index element={<Navigate to="acessos" replace />} />
                   <Route path="acessos" element={<AdminAccessPage />} />
                   <Route path="formularios" element={<AdminFormsPage />} />
+                  <Route path="catalogo" element={<AdminCatalogPage />} />
                   <Route path="configuracoes" element={<AdminSettingsPage />} />
                 </Route>
               </Route>

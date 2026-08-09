@@ -1,12 +1,16 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
 
 @Injectable()
 export class UnitsAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly formIndicatorsService: FormIndicatorsService,
+  ) {}
 
   findAll(includeInactive: boolean) {
     return this.prisma.unit.findMany({
@@ -28,6 +32,9 @@ export class UnitsAdminService {
   }
 
   async create(dto: CreateUnitDto) {
+    if (dto.formTemplateId) {
+      await this.formIndicatorsService.assertBalanced(dto.formTemplateId);
+    }
     try {
       return await this.prisma.unit.create({ data: dto });
     } catch (error) {
@@ -37,6 +44,9 @@ export class UnitsAdminService {
 
   async update(id: string, dto: UpdateUnitDto) {
     await this.ensureExists(id);
+    if (dto.formTemplateId) {
+      await this.formIndicatorsService.assertBalanced(dto.formTemplateId);
+    }
     try {
       return await this.prisma.unit.update({ where: { id }, data: dto });
     } catch (error) {

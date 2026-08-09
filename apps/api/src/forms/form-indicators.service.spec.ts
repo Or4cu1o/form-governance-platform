@@ -62,11 +62,52 @@ describe('FormIndicatorsService', () => {
     });
 
     test('creates the indicator under an existing topic when the formula is valid', async () => {
-      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1' });
+      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1', formTemplateId: 'template-1' });
+      createMock.mockResolvedValue({ id: 'indicator-1', ...validDto });
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+      findManyIndicatorMock.mockResolvedValue([]);
 
-      await service.create('topic-1', validDto);
+      const result = await service.create('topic-1', validDto);
 
       expect(createMock).toHaveBeenCalledWith({ data: { ...validDto, formTopicId: 'topic-1' } });
+      expect(result.indicator).toEqual({ id: 'indicator-1', ...validDto });
+    });
+
+    // T085/FR-064: um novo indicador ativo muda o conjunto ativo do
+    // formulario — a criacao devolve a redistribuicao proposta (nao
+    // aplicada) para o admin confirmar, em vez de deixar o desbalanco mudo.
+    test('returns a proposed redistribution when the new active set is unbalanced', async () => {
+      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1', formTemplateId: 'template-1' });
+      createMock.mockResolvedValue({ id: 'indicator-3', ...validDto });
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+      findManyIndicatorMock.mockResolvedValue([
+        { id: 'ind-1', title: 'A', scoreWeight: 10 },
+        { id: 'ind-2', title: 'B', scoreWeight: 10 },
+        { id: 'ind-3', title: 'C', scoreWeight: 0 },
+      ]);
+
+      const result = await service.create('topic-1', validDto);
+
+      expect(result.weightRebalance).toEqual({
+        items: [
+          { id: 'ind-1', title: 'A', scoreWeight: expect.any(Number) },
+          { id: 'ind-2', title: 'B', scoreWeight: expect.any(Number) },
+          { id: 'ind-3', title: 'C', scoreWeight: expect.any(Number) },
+        ],
+        sum: 10,
+        target: 10,
+      });
+    });
+
+    test('returns no proposed redistribution when the active set is already balanced', async () => {
+      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1', formTemplateId: 'template-1' });
+      createMock.mockResolvedValue({ id: 'indicator-1', ...validDto });
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+      findManyIndicatorMock.mockResolvedValue([{ id: 'ind-1', title: 'A', scoreWeight: 10 }]);
+
+      const result = await service.create('topic-1', validDto);
+
+      expect(result.weightRebalance).toBeNull();
     });
   });
 
@@ -109,11 +150,55 @@ describe('FormIndicatorsService', () => {
     });
 
     test('flips the isActive flag for an existing indicator', async () => {
-      findUniqueIndicatorMock.mockResolvedValue({ id: 'indicator-1' });
+      findUniqueIndicatorMock.mockResolvedValue({ id: 'indicator-1', formTopicId: 'topic-1' });
+      updateMock.mockResolvedValue({ id: 'indicator-1', isActive: false });
+      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1', formTemplateId: 'template-1' });
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+      findManyIndicatorMock.mockResolvedValue([]);
 
-      await service.setActive('indicator-1', false);
+      const result = await service.setActive('indicator-1', false);
 
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'indicator-1' }, data: { isActive: false } });
+      expect(result.indicator).toEqual({ id: 'indicator-1', isActive: false });
+    });
+
+    // T085: desativar tambem propoe redistribuicao quando o conjunto ativo
+    // remanescente fica desbalanceado.
+    test('returns a proposed redistribution when deactivating unbalances the remaining active set', async () => {
+      findUniqueIndicatorMock.mockResolvedValue({ id: 'indicator-1', formTopicId: 'topic-1' });
+      updateMock.mockResolvedValue({ id: 'indicator-1', isActive: false });
+      findUniqueTopicMock.mockResolvedValue({ id: 'topic-1', formTemplateId: 'template-1' });
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+      findManyIndicatorMock.mockResolvedValue([{ id: 'ind-2', title: 'B', scoreWeight: 6 }]);
+
+      const result = await service.setActive('indicator-1', false);
+
+      expect(result.weightRebalance).toEqual({
+        items: [{ id: 'ind-2', title: 'B', scoreWeight: 10 }],
+        sum: 10,
+        target: 10,
+      });
+    });
+  });
+
+  describe('assertBalanced', () => {
+    beforeEach(() => {
+      findUniqueTemplateMock.mockResolvedValue({ id: 'template-1' });
+    });
+
+    test('throws BadRequestException when the active weights do not sum to 10', async () => {
+      findManyIndicatorMock.mockResolvedValue([{ id: 'ind-1', title: 'A', scoreWeight: 4 }]);
+
+      await expect(service.assertBalanced('template-1')).rejects.toThrow(BadRequestException);
+    });
+
+    test('resolves without error when the active weights sum to 10', async () => {
+      findManyIndicatorMock.mockResolvedValue([
+        { id: 'ind-1', title: 'A', scoreWeight: 4 },
+        { id: 'ind-2', title: 'B', scoreWeight: 6 },
+      ]);
+
+      await expect(service.assertBalanced('template-1')).resolves.toBeUndefined();
     });
   });
 

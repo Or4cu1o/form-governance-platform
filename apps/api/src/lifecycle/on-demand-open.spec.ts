@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import { RoleName, UnitLevel } from '@prisma/client';
+import { GoalOperator, RoleName, UnitLevel } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../common/services/system-actor';
 import { UnitAccessService } from '../common/services/unit-access.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
+import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InheritanceService } from '../reports/inheritance.service';
@@ -26,11 +27,13 @@ describe('POST /report-instances/start-current (abertura sob demanda, integratio
   const auditContextService = new AuditContextService(prisma);
   const platformSettingsService = new PlatformSettingsService(prisma);
   const inheritanceService = new InheritanceService();
+  const formIndicatorsService = new FormIndicatorsService(prisma);
   const reportLifecycleService = new ReportLifecycleService(
     prisma,
     platformSettingsService,
     auditContextService,
     inheritanceService,
+    formIndicatorsService,
   );
   // Nao usados pelo caminho exercitado aqui (startCurrentPeriodForElaborador
   // nao le acesso por unidade nem envia notificacao) — presentes so para
@@ -70,6 +73,26 @@ describe('POST /report-instances/start-current (abertura sob demanda, integratio
     const template = await prisma.formTemplate.create({ data: { name: 'Template On-Demand Open Test' } });
     formTemplateId = template.id;
 
+    // FR-053/T086: instanciar relatorio exige soma de pesos ativos = 10 —
+    // um unico indicador com peso 10 mantem o template balanceado.
+    const topic = await prisma.formTopic.create({ data: { formTemplateId, title: 'Infra' } });
+    const catalogEntry = await prisma.indicatorCatalog.create({
+      data: { code: `ODO_${Date.now()}`, name: 'Indicador On-Demand', measurementUnit: 'UNIDADE' },
+    });
+    await prisma.formIndicator.create({
+      data: {
+        formTopicId: topic.id,
+        title: 'Indicador On-Demand',
+        objective: 'Teste',
+        variableKeys: ['QTD'],
+        formulaExpression: 'QTD',
+        goalOperator: GoalOperator.GTE,
+        goalValue: 0,
+        catalogEntryId: catalogEntry.id,
+        scoreWeight: 10,
+      },
+    });
+
     const activeUnit = await prisma.unit.create({
       data: { sigla: `ODO-ATIVA-${Date.now()}`, nome: 'Unidade Ativa', level: UnitLevel.A, formTemplateId, isActive: true },
     });
@@ -88,6 +111,8 @@ describe('POST /report-instances/start-current (abertura sob demanda, integratio
     await prisma.indicatorResponse.deleteMany({ where: { reportInstance: { unitId: activeUnitId } } });
     await prisma.reportInstance.deleteMany({ where: { unitId: activeUnitId } });
     await prisma.unit.deleteMany({ where: { id: { in: [activeUnitId, inactiveUnitId, unitWithoutFormId] } } });
+    await prisma.formIndicator.deleteMany({ where: { formTopic: { formTemplateId } } });
+    await prisma.formTopic.deleteMany({ where: { formTemplateId } });
     await prisma.formTemplate.delete({ where: { id: formTemplateId } });
     await prisma.$disconnect();
   });

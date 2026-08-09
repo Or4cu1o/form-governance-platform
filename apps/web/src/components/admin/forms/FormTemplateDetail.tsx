@@ -14,7 +14,8 @@ import { cn } from '../../../lib/cn';
 import { TopicFormModal } from './TopicFormModal';
 import { IndicatorFormModal } from './IndicatorFormModal';
 import { IndicatorScorePanel } from './IndicatorScorePanel';
-import type { FormIndicator, FormTemplate, FormTopic } from '../../../types/api';
+import { WeightRebalanceModal } from './WeightRebalanceModal';
+import type { FormIndicator, FormTemplate, FormTopic, IndicatorScoreSummary } from '../../../types/api';
 
 type TopicModalState = { type: 'create' } | { type: 'edit'; topic: FormTopic } | null;
 type IndicatorModalState = { type: 'create'; topicId: string } | { type: 'edit'; topicId: string; indicator: FormIndicator } | null;
@@ -29,6 +30,7 @@ export function FormTemplateDetail({ template }: Props) {
   const [topicModal, setTopicModal] = useState<TopicModalState>(null);
   const [indicatorModal, setIndicatorModal] = useState<IndicatorModalState>(null);
   const [openTopics, setOpenTopics] = useState<Record<string, boolean>>({});
+  const [pendingRebalance, setPendingRebalance] = useState<IndicatorScoreSummary | null>(null);
 
   function isTopicOpen(topicId: string) {
     return openTopics[topicId] ?? true;
@@ -54,9 +56,15 @@ export function FormTemplateDetail({ template }: Props) {
   const toggleIndicatorMutation = useMutation({
     mutationFn: (indicator: FormIndicator) =>
       indicator.isActive ? deactivateFormIndicator(indicator.id) : activateFormIndicator(indicator.id),
-    onSuccess: () => {
+    onSuccess: (result) => {
       showToast('Status do indicador atualizado.', 'success');
       invalidate();
+      // T085: ativar/inativar muda o conjunto ativo — o painel de pontuacao
+      // precisa recalcular, e uma redistribuicao proposta pode ter voltado.
+      queryClient.invalidateQueries({ queryKey: ['indicator-scores', template.id] });
+      if (result.weightRebalance) {
+        setPendingRebalance(result.weightRebalance);
+      }
     },
     onError: () => showToast('Não foi possível atualizar o indicador.', 'error'),
   });
@@ -213,6 +221,7 @@ export function FormTemplateDetail({ template }: Props) {
           onClose={() => setIndicatorModal(null)}
           templateId={template.id}
           topicId={indicatorModal.topicId}
+          onRebalanceProposed={setPendingRebalance}
         />
       )}
       {indicatorModal?.type === 'edit' && (
@@ -222,6 +231,15 @@ export function FormTemplateDetail({ template }: Props) {
           templateId={template.id}
           topicId={indicatorModal.topicId}
           indicator={indicatorModal.indicator}
+          onRebalanceProposed={setPendingRebalance}
+        />
+      )}
+
+      {pendingRebalance && (
+        <WeightRebalanceModal
+          templateId={template.id}
+          rebalance={pendingRebalance}
+          onClose={() => setPendingRebalance(null)}
         />
       )}
     </div>

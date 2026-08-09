@@ -66,6 +66,18 @@ export interface AdminUser {
   unitAccesses: UserUnitAccess[];
 }
 
+export interface CatalogEntry {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  // Imutavel apos o primeiro vinculo (FR-064).
+  measurementUnit: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FormIndicator {
   id: string;
   formTopicId: string;
@@ -79,9 +91,16 @@ export interface FormIndicator {
   order: number;
   isActive: boolean;
   scoreWeight: string;
+  catalogEntryId: string;
   createdAt: string;
   updatedAt: string;
   formTopic?: FormTopic;
+  catalogEntry?: CatalogEntry;
+}
+
+export interface IndicatorMutationResult {
+  indicator: FormIndicator;
+  weightRebalance: IndicatorScoreSummary | null;
 }
 
 export interface IndicatorScoreItem {
@@ -246,6 +265,14 @@ export interface SystemSetting {
   slaApprovalBusinessDay: number;
   slaReprovalExtensionDays: number;
   slaDeflatorScore: number;
+  // Janela de retencao de evidencia em anos; -1 = indeterminado (FR-043).
+  evidenceRetentionYears: number;
+  includeOptionalHolidays: boolean;
+  auditMaxRangeMonths: number;
+  auditDetailedMaxRangeMonths: number;
+  auditExactCountThreshold: number;
+  outlierRule: string;
+  forensicHoldYears: number;
   updatedAt: string;
 }
 
@@ -272,6 +299,13 @@ export type UpdatePlatformSettingsInput = Partial<
     | 'slaApprovalBusinessDay'
     | 'slaReprovalExtensionDays'
     | 'slaDeflatorScore'
+    | 'evidenceRetentionYears'
+    | 'includeOptionalHolidays'
+    | 'auditMaxRangeMonths'
+    | 'auditDetailedMaxRangeMonths'
+    | 'auditExactCountThreshold'
+    | 'outlierRule'
+    | 'forensicHoldYears'
   >
 >;
 

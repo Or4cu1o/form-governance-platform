@@ -104,6 +104,18 @@ describe('LifecycleCronService', () => {
       expect(openPeriodForUnitMock).toHaveBeenCalledWith(units[0], new Date(Date.UTC(2026, 6, 1)));
       expect(openPeriodForUnitMock).toHaveBeenCalledWith(units[1], new Date(Date.UTC(2026, 6, 1)));
     });
+
+    // FR-064/US4-3: um formulario desbalanceado de uma unidade (T086,
+    // assertBalanced) nao pode travar a abertura de periodo das demais.
+    test('keeps processing the remaining units when one fails to open', async () => {
+      const units = [{ id: 'unit-1', sigla: 'FIL01' } as Unit, { id: 'unit-2', sigla: 'FIL02' } as Unit];
+      findManyUnitsMock.mockResolvedValue(units);
+      openPeriodForUnitMock.mockRejectedValueOnce(new Error('pesos desbalanceados')).mockResolvedValueOnce(undefined);
+
+      await expect(service.openMonthlyPeriods(new Date('2026-07-15T00:00:00.000Z'))).resolves.toBeUndefined();
+
+      expect(openPeriodForUnitMock).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('checkSlaOverdue', () => {

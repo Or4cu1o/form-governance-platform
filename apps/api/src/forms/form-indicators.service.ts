@@ -20,9 +20,11 @@ export class FormIndicatorsService {
     }
     validateFormulaExpression(dto.formulaExpression, dto.variableKeys);
 
-    return this.prisma.formIndicator.create({
+    const indicator = await this.prisma.formIndicator.create({
       data: { ...dto, formTopicId },
     });
+    const weightRebalance = await this.buildProposedRedistribution(topic.formTemplateId);
+    return { indicator, weightRebalance };
   }
 
   async update(id: string, dto: UpdateFormIndicatorDto) {
@@ -36,8 +38,28 @@ export class FormIndicatorsService {
   }
 
   async setActive(id: string, isActive: boolean) {
-    await this.ensureExists(id);
-    return this.prisma.formIndicator.update({ where: { id }, data: { isActive } });
+    const indicator = await this.ensureExists(id);
+    const updated = await this.prisma.formIndicator.update({ where: { id }, data: { isActive } });
+
+    // T085: ativar/inativar altera o conjunto de indicadores ativos, o que
+    // pode desbalancear a soma dos pesos — propoe a redistribuicao (sem
+    // aplicar) para o admin confirmar, em vez de deixar o desbalanco mudo.
+    const topic = await this.prisma.formTopic.findUnique({ where: { id: indicator.formTopicId } });
+    const weightRebalance = topic ? await this.buildProposedRedistribution(topic.formTemplateId) : null;
+    return { indicator: updated, weightRebalance };
+  }
+
+  // FR-064/US4-3: recusa vincular um formulario a uma unidade, ou instanciar
+  // um relatorio a partir dele, enquanto a soma dos pesos ativos nao for
+  // exatamente 10,00 — sem impedir que o formulario em si seja salvo.
+  async assertBalanced(formTemplateId: string): Promise<void> {
+    const indicators = await this.findActiveIndicators(formTemplateId);
+    const summary = this.buildScoreSummary(indicators);
+    if (Math.abs(summary.sum - TOTAL_SCORE_BUDGET) > SCORE_SUM_TOLERANCE) {
+      throw new BadRequestException(
+        `A soma dos pesos dos indicadores ativos deste formulario deve ser ${TOTAL_SCORE_BUDGET} (atual: ${summary.sum.toFixed(2)}).`,
+      );
+    }
   }
 
   async getScores(formTemplateId: string) {
@@ -116,6 +138,29 @@ export class FormIndicatorsService {
     }));
     const sum = items.reduce((total, item) => total + item.scoreWeight, 0);
     return { items, sum, target: TOTAL_SCORE_BUDGET };
+  }
+
+  private async buildProposedRedistribution(formTemplateId: string) {
+    const indicators = await this.findActiveIndicators(formTemplateId);
+    if (indicators.length === 0) {
+      return null;
+    }
+
+    const currentSummary = this.buildScoreSummary(indicators);
+    if (Math.abs(currentSummary.sum - TOTAL_SCORE_BUDGET) <= SCORE_SUM_TOLERANCE) {
+      return null;
+    }
+
+    const proposedWeights = distributeScoreWeights(indicators.length, TOTAL_SCORE_BUDGET);
+    return {
+      items: indicators.map((indicator, index) => ({
+        id: indicator.id,
+        title: indicator.title,
+        scoreWeight: proposedWeights[index],
+      })),
+      sum: TOTAL_SCORE_BUDGET,
+      target: TOTAL_SCORE_BUDGET,
+    };
   }
 
   private async ensureExists(id: string) {

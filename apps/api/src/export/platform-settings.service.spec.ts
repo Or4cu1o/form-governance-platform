@@ -85,6 +85,55 @@ describe('PlatformSettingsService', () => {
       });
     });
 
+    // T087: os sete parametros novos de SystemSetting (A7) sao expostos e
+    // persistidos por updateSettings, um a um, sem exigir os demais.
+    test('updates each of the seven new SystemSetting parameters independently', async () => {
+      findFirstMock.mockResolvedValue(defaultSettings);
+      updateMock.mockResolvedValue(defaultSettings);
+
+      await service.updateSettings({ evidenceRetentionYears: -1 });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { evidenceRetentionYears: -1 },
+      });
+
+      await service.updateSettings({ includeOptionalHolidays: true });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { includeOptionalHolidays: true },
+      });
+
+      await service.updateSettings({ auditMaxRangeMonths: 18 });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { auditMaxRangeMonths: 18 },
+      });
+
+      await service.updateSettings({ auditDetailedMaxRangeMonths: 6 });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { auditDetailedMaxRangeMonths: 6 },
+      });
+
+      await service.updateSettings({ auditExactCountThreshold: 5000 });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { auditExactCountThreshold: 5000 },
+      });
+
+      await service.updateSettings({ outlierRule: 'IQR' });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { outlierRule: 'IQR' },
+      });
+
+      await service.updateSettings({ forensicHoldYears: 2 });
+      expect(updateMock).toHaveBeenLastCalledWith({
+        where: { id: 'settings-1' },
+        data: { forensicHoldYears: 2 },
+      });
+    });
+
     test('rejects when the resulting SLA thresholds are not strictly increasing', async () => {
       findFirstMock.mockResolvedValue(defaultSettings);
 

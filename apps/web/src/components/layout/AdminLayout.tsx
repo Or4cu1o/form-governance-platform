@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 const ADMIN_TABS = [
   { to: '/admin/acessos', label: 'Acessos' },
   { to: '/admin/formularios', label: 'Formulários' },
+  { to: '/admin/catalogo', label: 'Catálogo' },
   { to: '/admin/configuracoes', label: 'Configurações' },
 ];
 

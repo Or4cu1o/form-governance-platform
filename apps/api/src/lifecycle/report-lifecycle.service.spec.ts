@@ -1,5 +1,7 @@
+import { BadRequestException } from '@nestjs/common';
 import { GoalOperator, InheritanceState, UnitLevel } from '@prisma/client';
 import { PlatformSettingsService } from '../export/platform-settings.service';
+import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../common/services/system-actor';
@@ -16,7 +18,14 @@ describe('ReportLifecycleService (integration)', () => {
   const platformSettingsService = new PlatformSettingsService(prisma);
   const auditContextService = new AuditContextService(prisma);
   const inheritanceService = new InheritanceService();
-  const service = new ReportLifecycleService(prisma, platformSettingsService, auditContextService, inheritanceService);
+  const formIndicatorsService = new FormIndicatorsService(prisma);
+  const service = new ReportLifecycleService(
+    prisma,
+    platformSettingsService,
+    auditContextService,
+    inheritanceService,
+    formIndicatorsService,
+  );
 
   let unitId: string;
   let formTemplateId: string;
@@ -56,6 +65,7 @@ describe('ReportLifecycleService (integration)', () => {
         goalValue: 0,
         isResidentState: true,
         catalogEntryId: residentCatalogEntry.id,
+        scoreWeight: 5,
       },
     });
     residentIndicatorId = residentIndicator.id;
@@ -71,6 +81,7 @@ describe('ReportLifecycleService (integration)', () => {
         goalValue: 95,
         isResidentState: false,
         catalogEntryId: volatileCatalogEntry.id,
+        scoreWeight: 5,
       },
     });
     volatileIndicatorId = volatileIndicator.id;
@@ -164,5 +175,43 @@ describe('ReportLifecycleService (integration)', () => {
     expect(volatileResponse.isClonedFromResident).toBe(false);
     expect(volatileResponse.variableValues).toEqual({});
     expect(volatileResponse.inheritanceState).toBe(InheritanceState.NAO_HERDADO);
+  });
+
+  // T081/FR-064/US4-3: instanciacao recusada quando a soma dos pesos ativos
+  // do formulario nao fecha em 10,00 — o vinculo unit->template pode existir,
+  // mas nenhum periodo abre a partir dele ate a pontuacao ser corrigida.
+  test('rejects opening a period when the active indicator weights do not sum to 10', async () => {
+    const unbalancedTemplate = await prisma.formTemplate.create({ data: { name: 'Template Desbalanceado' } });
+    const unbalancedTopic = await prisma.formTopic.create({ data: { formTemplateId: unbalancedTemplate.id, title: 'Infra' } });
+    const unbalancedCatalogEntry = await prisma.indicatorCatalog.create({
+      data: { code: `LIFECYCLE_UNBALANCED_${Date.now()}`, name: 'Indicador Unico', measurementUnit: 'UNIDADE' },
+    });
+    const unbalancedIndicator = await prisma.formIndicator.create({
+      data: {
+        formTopicId: unbalancedTopic.id,
+        title: 'Indicador Unico',
+        objective: 'Teste',
+        variableKeys: ['QTD'],
+        formulaExpression: 'QTD',
+        goalOperator: GoalOperator.GTE,
+        goalValue: 0,
+        catalogEntryId: unbalancedCatalogEntry.id,
+        scoreWeight: 4,
+      },
+    });
+    const unbalancedUnit = await prisma.unit.create({
+      data: { sigla: 'LIFE-UNBAL', nome: 'Unidade Desbalanceada', level: UnitLevel.A, formTemplateId: unbalancedTemplate.id },
+    });
+
+    try {
+      await expect(openPeriodAsTestActor(unbalancedUnit, july2026)).rejects.toThrow(BadRequestException);
+      const count = await prisma.reportInstance.count({ where: { unitId: unbalancedUnit.id } });
+      expect(count).toBe(0);
+    } finally {
+      await prisma.unit.delete({ where: { id: unbalancedUnit.id } });
+      await prisma.formIndicator.delete({ where: { id: unbalancedIndicator.id } });
+      await prisma.formTopic.delete({ where: { id: unbalancedTopic.id } });
+      await prisma.formTemplate.delete({ where: { id: unbalancedTemplate.id } });
+    }
   });
 });

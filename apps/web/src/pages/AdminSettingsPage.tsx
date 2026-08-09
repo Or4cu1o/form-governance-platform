@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { PageHeader } from '../components/layout/PageHeader';
+import { EvidenceRetentionPanel } from '../components/admin/settings/EvidenceRetentionPanel';
 import { PlatformNamingPanel } from '../components/admin/settings/PlatformNamingPanel';
 import { SlaSettingsPanel } from '../components/admin/settings/SlaSettingsPanel';
 import { ScoreSettingsPanel } from '../components/admin/settings/ScoreSettingsPanel';
@@ -43,7 +44,12 @@ export function AdminSettingsPage() {
       </div>
 
       <div className="p-8 pt-6">
-        {tab === 'platform' && <PlatformNamingPanel />}
+        {tab === 'platform' && (
+          <div className="flex flex-col gap-6">
+            <PlatformNamingPanel />
+            <EvidenceRetentionPanel />
+          </div>
+        )}
         {tab === 'sla' && <SlaSettingsPanel />}
         {tab === 'score' && <ScoreSettingsPanel />}
       </div>

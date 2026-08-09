@@ -83,6 +83,7 @@ describe('forms api', () => {
       formulaExpression: '(uptime / total) * 100',
       goalOperator: 'GTE' as const,
       goalValue: 99,
+      catalogEntryId: 'catalog-1',
     };
     await createFormIndicator('topic-1', input);
     expect(apiSend).toHaveBeenCalledWith('POST', '/form-topics/topic-1/indicators', input);

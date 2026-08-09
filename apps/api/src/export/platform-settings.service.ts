@@ -39,6 +39,15 @@ export class PlatformSettingsService {
           slaReprovalExtensionDays: dto.slaReprovalExtensionDays,
         }),
         ...(dto.slaDeflatorScore !== undefined && { slaDeflatorScore: dto.slaDeflatorScore }),
+        ...(dto.evidenceRetentionYears !== undefined && { evidenceRetentionYears: dto.evidenceRetentionYears }),
+        ...(dto.includeOptionalHolidays !== undefined && { includeOptionalHolidays: dto.includeOptionalHolidays }),
+        ...(dto.auditMaxRangeMonths !== undefined && { auditMaxRangeMonths: dto.auditMaxRangeMonths }),
+        ...(dto.auditDetailedMaxRangeMonths !== undefined && {
+          auditDetailedMaxRangeMonths: dto.auditDetailedMaxRangeMonths,
+        }),
+        ...(dto.auditExactCountThreshold !== undefined && { auditExactCountThreshold: dto.auditExactCountThreshold }),
+        ...(dto.outlierRule !== undefined && { outlierRule: dto.outlierRule }),
+        ...(dto.forensicHoldYears !== undefined && { forensicHoldYears: dto.forensicHoldYears }),
       },
     });
   }

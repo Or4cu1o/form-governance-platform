@@ -66,10 +66,21 @@ export class LifecycleCronService {
       where: { isActive: true, formTemplateId: { not: null } },
     });
 
+    let failedCount = 0;
     for (const unit of units) {
-      await this.reportLifecycleService.openPeriodForUnit(unit, referenceMonth);
+      try {
+        await this.reportLifecycleService.openPeriodForUnit(unit, referenceMonth);
+      } catch (error) {
+        // FR-064/US4-3: um formulario desbalanceado de uma unidade nao pode
+        // travar a abertura de periodo das demais — registra e segue.
+        failedCount += 1;
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Falha ao abrir periodo para a unidade ${unit.sigla}: ${reason}`);
+      }
     }
-    this.logger.log(`Abertura de periodo (1o DU): ${units.length} unidade(s) processada(s).`);
+    this.logger.log(
+      `Abertura de periodo (1o DU): ${units.length - failedCount} unidade(s) processada(s), ${failedCount} falha(s).`,
+    );
   }
 
   async checkSlaOverdue(today: Date): Promise<void> {

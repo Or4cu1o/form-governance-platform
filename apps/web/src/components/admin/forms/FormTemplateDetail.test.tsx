@@ -43,6 +43,7 @@ const templateWithTopics: FormTemplate = {
           order: 0,
           isActive: true,
           scoreWeight: '0',
+          catalogEntryId: 'catalog-1',
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -82,6 +83,24 @@ describe('FormTemplateDetail', () => {
     });
 
     expect(formsApi.deactivateFormTopic).toHaveBeenCalledWith('topic-1');
+  });
+
+  // T085/T089/US4-4: desativar um indicador que desbalanceia o restante
+  // apresenta a redistribuicao proposta e exige confirmacao para aplicar.
+  it('shows the weight rebalance confirmation dialog when toggling an indicator unbalances the active set', async () => {
+    vi.mocked(formsApi.deactivateFormIndicator).mockResolvedValueOnce({
+      indicator: { ...templateWithTopics.topics![0].indicators![0], isActive: false },
+      weightRebalance: { items: [{ id: 'ind-2', title: 'Outro indicador', scoreWeight: 10 }], sum: 10, target: 10 },
+    });
+
+    renderWithProviders(<FormTemplateDetail template={templateWithTopics} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Desativar indicador'));
+    });
+
+    expect(screen.getByText('Confirmar redistribuição de pesos')).toBeInTheDocument();
+    expect(screen.getByText('Outro indicador')).toBeInTheDocument();
   });
 
   it('opens the indicator creation modal for a topic', () => {

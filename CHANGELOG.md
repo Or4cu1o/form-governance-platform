@@ -38,6 +38,20 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   `ReportsPage`, ligados aos parâmetros que o backend já aceitava sem UI correspondente.
 - Indicador de proximidade e estouro de prazo da fase corrente (`DeadlineBadge`) em
   `ReportDetailPage`, além do binário atrasado/no prazo já existente.
+- Módulo de catálogo canônico (`apps/api/src/catalog`): `GET/POST/PATCH /api/catalog` e
+  `POST /api/catalog/:id/deactivate`, com `measurementUnit` imutável após o primeiro vínculo e
+  desativação recusada com indicador ativo vinculado (409 em ambos os casos, FR-064).
+- `AdminCatalogPage.tsx` e `CatalogEntryPicker.tsx`: catálogo administrável e criável a partir do
+  próprio cadastro de indicador, sem sair do formulário (FR-063).
+- `FormIndicatorsService.assertBalanced`: recusa vincular um formulário a uma unidade ou
+  instanciar relatório enquanto a soma dos pesos ativos não for exatamente 10,00, sem impedir o
+  salvamento do formulário para correção (FR-053). `LifecycleCronService` isola falhas por unidade
+  na abertura mensal de período, para que um formulário desbalanceado não trave as demais.
+- Redistribuição de pesos proposta (não aplicada) ao criar, ativar ou inativar um indicador,
+  exigindo confirmação explícita via novo `WeightRebalanceModal.tsx` (FR-054, US4-4).
+- `EvidenceRetentionPanel.tsx`: diálogo dedicado, distinto do salvamento comum, para confirmar
+  retenção de evidência indeterminada; aviso explícito de que reduzir a janela não libera o
+  acervo já gravado (FR-042, FR-043).
 
 - `AuditContextService` (`AsyncLocalStorage`), substituindo `PrismaService.runWithAuditActor`:
   toda escrita auditada agora carrega contexto de requisição completo (usuário, IP, User-Agent,
@@ -245,3 +259,12 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   aferiu pontualidade); pontos facultativos móveis e `includeOptionalHolidays` (T071/T074); filtros
   de período/busca e indicador de proximidade de prazo no frontend (T076/T077, com T077 implementado
   em `ReportDetailPage.tsx` via novo componente `DeadlineBadge`).
+- **Fase 6 — US4 (P4)** (T078-T091): concluída. Novo módulo `catalog` (T078-T079, T083); T084 já
+  estava satisfeita no DTO/schema, faltando apenas o consumo no frontend; T080/T081/T082 já estavam
+  cobertas em outros arquivos (`formula-validator`, `evidence.service.spec.ts`), com o desvio
+  documentado seguindo o mesmo precedente da Fase 5; `assertBalanced` recusa vínculo/instanciação
+  com pesos fora de 10,00 (T086), com resiliência por unidade no cron (T085/T086); redistribuição
+  proposta ao criar/ativar/inativar indicador, com confirmação explícita no frontend (T085/T089);
+  sete parâmetros novos de `SystemSetting` expostos (T087); catálogo administrável com criação
+  embutida no cadastro de indicador (T088); diálogo dedicado de retenção indeterminada e aviso de
+  não liberação ao reduzir a janela (T090/T091).

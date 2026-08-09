@@ -4,7 +4,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFormIndicator, updateFormIndicator } from '../../../api/forms';
 import { Button, Field, Input, Modal, Select, Textarea, useToast } from '../../ui';
 import { GOAL_OPERATOR_SYMBOL } from '../../../lib/status';
-import type { FormIndicator, GoalOperator } from '../../../types/api';
+import { CatalogEntryPicker } from './CatalogEntryPicker';
+import type {
+  CatalogEntry,
+  FormIndicator,
+  GoalOperator,
+  IndicatorMutationResult,
+  IndicatorScoreSummary,
+} from '../../../types/api';
 
 const GOAL_OPERATORS = Object.keys(GOAL_OPERATOR_SYMBOL) as GoalOperator[];
 const VARIABLE_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -15,9 +22,10 @@ type Props = {
   templateId: string;
   topicId: string;
   indicator?: FormIndicator;
+  onRebalanceProposed?: (rebalance: IndicatorScoreSummary) => void;
 };
 
-export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indicator }: Props) {
+export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indicator, onRebalanceProposed }: Props) {
   const isEditing = Boolean(indicator);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -30,10 +38,12 @@ export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indic
   const [goalValue, setGoalValue] = useState(indicator?.goalValue ?? '0');
   const [isResidentState, setIsResidentState] = useState(indicator?.isResidentState ?? false);
   const [order, setOrder] = useState(String(indicator?.order ?? 0));
+  const [catalogEntryId, setCatalogEntryId] = useState(indicator?.catalogEntryId ?? '');
+  const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<CatalogEntry | undefined>(indicator?.catalogEntry);
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (): Promise<FormIndicator | IndicatorMutationResult> => {
       const variableKeys = variableKeysInput
         .split(',')
         .map((key) => key.trim())
@@ -45,14 +55,19 @@ export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indic
         formulaExpression,
         goalOperator,
         goalValue: Number(goalValue),
+        catalogEntryId,
         isResidentState,
         order: Number(order),
       };
       return isEditing ? updateFormIndicator(indicator!.id, input) : createFormIndicator(topicId, input);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       showToast(isEditing ? 'Indicador atualizado.' : 'Indicador criado.', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-form-template', templateId] });
+      queryClient.invalidateQueries({ queryKey: ['indicator-scores', templateId] });
+      if ('weightRebalance' in result && result.weightRebalance) {
+        onRebalanceProposed?.(result.weightRebalance);
+      }
       onClose();
     },
     onError: (caught) =>
@@ -76,6 +91,10 @@ export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indic
     }
     if (variableKeys.some((key) => !VARIABLE_KEY_PATTERN.test(key))) {
       setError('Chaves devem começar com letra e conter apenas letras, números e "_".');
+      return;
+    }
+    if (!catalogEntryId) {
+      setError('Selecione ou crie um código de catálogo (FR-062).');
       return;
     }
     setError(null);
@@ -119,6 +138,17 @@ export function IndicatorFormModal({ isOpen, onClose, templateId, topicId, indic
             onChange={(event) => setFormulaExpression(event.target.value)}
             className="font-mono"
             placeholder="(Key_A / (Key_B + Key_A)) * 100"
+          />
+        </Field>
+
+        <Field label="Código de catálogo" htmlFor="catalogEntrySearch" required hint="Identidade estável da métrica entre formulários distintos (FR-062).">
+          <CatalogEntryPicker
+            value={catalogEntryId}
+            selectedEntry={selectedCatalogEntry}
+            onChange={(entry) => {
+              setCatalogEntryId(entry.id);
+              setSelectedCatalogEntry(entry);
+            }}
           />
         </Field>
 

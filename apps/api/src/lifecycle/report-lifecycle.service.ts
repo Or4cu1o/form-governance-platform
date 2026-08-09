@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ReportStatus, Unit } from '@prisma/client';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
+import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { InheritanceService } from '../reports/inheritance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getHolidaysForYear, getNthBusinessDayOfMonth, toUtcMidnight } from './business-days.util';
@@ -24,6 +25,7 @@ export class ReportLifecycleService {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly auditContextService: AuditContextService,
     private readonly inheritanceService: InheritanceService,
+    private readonly formIndicatorsService: FormIndicatorsService,
   ) {}
 
   async openPeriodForUnit(unit: Unit, referenceMonth: Date) {
@@ -39,6 +41,12 @@ export class ReportLifecycleService {
     if (existing) {
       return existing;
     }
+
+    // FR-064/US4-3: recusa instanciar o relatorio enquanto a soma dos pesos
+    // ativos do formulario nao for exatamente 10,00 — o vinculo ja fica
+    // registrado na unidade, mas nenhum periodo abre a partir dele ate a
+    // pontuacao ser corrigida.
+    await this.formIndicatorsService.assertBalanced(unit.formTemplateId);
 
     const year = normalizedMonth.getUTCFullYear();
     const monthIndex0 = normalizedMonth.getUTCMonth();

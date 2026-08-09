@@ -1,5 +1,6 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma, UnitLevel } from '@prisma/client';
+import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UnitsAdminService } from './units-admin.service';
 
@@ -17,16 +18,19 @@ describe('UnitsAdminService', () => {
   let findUniqueMock: jest.Mock;
   let createMock: jest.Mock;
   let updateMock: jest.Mock;
+  let assertBalancedMock: jest.Mock;
 
   beforeEach(() => {
     findManyMock = jest.fn();
     findUniqueMock = jest.fn();
     createMock = jest.fn();
     updateMock = jest.fn();
+    assertBalancedMock = jest.fn().mockResolvedValue(undefined);
     const prisma = {
       unit: { findMany: findManyMock, findUnique: findUniqueMock, create: createMock, update: updateMock },
     } as unknown as PrismaService;
-    service = new UnitsAdminService(prisma);
+    const formIndicatorsService = { assertBalanced: assertBalancedMock } as unknown as FormIndicatorsService;
+    service = new UnitsAdminService(prisma, formIndicatorsService);
   });
 
   test('findAll filters by isActive unless includeInactive is set', async () => {
@@ -70,6 +74,19 @@ describe('UnitsAdminService', () => {
       await service.create(dto);
 
       expect(createMock).toHaveBeenCalledWith({ data: dto });
+      expect(assertBalancedMock).not.toHaveBeenCalled();
+    });
+
+    // T081/FR-064/US4-3: vincular um formulario desbalanceado a uma unidade
+    // e recusado, sem impedir a criacao da propria unidade sem vinculo.
+    test('rejects linking a form template whose active weights do not sum to 10', async () => {
+      assertBalancedMock.mockRejectedValue(new BadRequestException('desbalanceado'));
+
+      await expect(
+        service.create({ sigla: 'FIL03', nome: 'Filial Tres', level: UnitLevel.B, formTemplateId: 'template-1' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(assertBalancedMock).toHaveBeenCalledWith('template-1');
+      expect(createMock).not.toHaveBeenCalled();
     });
   });
 
@@ -85,6 +102,15 @@ describe('UnitsAdminService', () => {
       updateMock.mockRejectedValue(buildUniqueConstraintError(['sigla']));
 
       await expect(service.update('unit-1', { sigla: 'DUPLICADA' })).rejects.toThrow(ConflictException);
+    });
+
+    test('rejects linking a form template whose active weights do not sum to 10', async () => {
+      findUniqueMock.mockResolvedValue({ id: 'unit-1' });
+      assertBalancedMock.mockRejectedValue(new BadRequestException('desbalanceado'));
+
+      await expect(service.update('unit-1', { formTemplateId: 'template-1' })).rejects.toThrow(BadRequestException);
+      expect(assertBalancedMock).toHaveBeenCalledWith('template-1');
+      expect(updateMock).not.toHaveBeenCalled();
     });
   });
 

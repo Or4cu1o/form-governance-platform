@@ -1,5 +1,12 @@
 import { apiGet, apiSend, buildQueryString } from '../lib/api-client';
-import type { FormIndicator, FormTemplate, FormTopic, GoalOperator, IndicatorScoreSummary } from '../types/api';
+import type {
+  FormIndicator,
+  FormTemplate,
+  FormTopic,
+  GoalOperator,
+  IndicatorMutationResult,
+  IndicatorScoreSummary,
+} from '../types/api';
 
 export interface FormTemplateInput {
   name: string;
@@ -18,6 +25,8 @@ export interface FormIndicatorInput {
   formulaExpression: string;
   goalOperator: GoalOperator;
   goalValue: number;
+  // Vinculo obrigatorio ao catalogo canonico (FR-062).
+  catalogEntryId: string;
   isResidentState?: boolean;
   order?: number;
 }
@@ -62,20 +71,20 @@ export function activateFormTopic(id: string): Promise<FormTopic> {
   return apiSend<FormTopic>('PATCH', `/form-topics/${encodeURIComponent(id)}/activate`);
 }
 
-export function createFormIndicator(topicId: string, input: FormIndicatorInput): Promise<FormIndicator> {
-  return apiSend<FormIndicator>('POST', `/form-topics/${encodeURIComponent(topicId)}/indicators`, input);
+export function createFormIndicator(topicId: string, input: FormIndicatorInput): Promise<IndicatorMutationResult> {
+  return apiSend<IndicatorMutationResult>('POST', `/form-topics/${encodeURIComponent(topicId)}/indicators`, input);
 }
 
 export function updateFormIndicator(id: string, input: Partial<FormIndicatorInput>): Promise<FormIndicator> {
   return apiSend<FormIndicator>('PATCH', `/form-indicators/${encodeURIComponent(id)}`, input);
 }
 
-export function deactivateFormIndicator(id: string): Promise<FormIndicator> {
-  return apiSend<FormIndicator>('PATCH', `/form-indicators/${encodeURIComponent(id)}/deactivate`);
+export function deactivateFormIndicator(id: string): Promise<IndicatorMutationResult> {
+  return apiSend<IndicatorMutationResult>('PATCH', `/form-indicators/${encodeURIComponent(id)}/deactivate`);
 }
 
-export function activateFormIndicator(id: string): Promise<FormIndicator> {
-  return apiSend<FormIndicator>('PATCH', `/form-indicators/${encodeURIComponent(id)}/activate`);
+export function activateFormIndicator(id: string): Promise<IndicatorMutationResult> {
+  return apiSend<IndicatorMutationResult>('PATCH', `/form-indicators/${encodeURIComponent(id)}/activate`);
 }
 
 export function getIndicatorScores(templateId: string): Promise<IndicatorScoreSummary> {

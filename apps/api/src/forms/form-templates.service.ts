@@ -29,6 +29,7 @@ export class FormTemplatesService {
             indicators: {
               where: includeInactive ? undefined : { isActive: true },
               orderBy: { order: 'asc' },
+              include: { catalogEntry: true },
             },
           },
         },
