@@ -7,6 +7,7 @@ describe('NotificationsService', () => {
   let service: NotificationsService;
   let findManyMock: jest.Mock;
   let sendMock: jest.Mock;
+  let notificationFailureCreateMock: jest.Mock;
 
   const unit = { id: 'unit-1', sigla: 'FIL01', nome: 'Filial Um' } as Unit;
   const report = { id: 'report-1', referenceMonth: new Date('2026-07-01'), slaExtensionDueDate: null } as ReportInstance;
@@ -14,7 +15,11 @@ describe('NotificationsService', () => {
   beforeEach(() => {
     findManyMock = jest.fn();
     sendMock = jest.fn();
-    const prisma = { user: { findMany: findManyMock } } as unknown as PrismaService;
+    notificationFailureCreateMock = jest.fn().mockResolvedValue({ id: 'failure-1' });
+    const prisma = {
+      user: { findMany: findManyMock },
+      notificationFailure: { create: notificationFailureCreateMock },
+    } as unknown as PrismaService;
     const emailService = { send: sendMock } as unknown as EmailService;
     service = new NotificationsService(prisma, emailService);
   });
@@ -68,5 +73,58 @@ describe('NotificationsService', () => {
     sendMock.mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(service.notifyReportConcluded(report, unit)).resolves.toBeUndefined();
+  });
+
+  // T170/FR-123/FR-112 — a falha nao pode existir so em logger.error: fica
+  // registrada em NotificationFailure com servico/operacao/causa (FR-123)
+  // e destinatario/transicao afetados (FR-112).
+  test('persists a NotificationFailure with service, operation, cause, recipients and the affected report when send fails', async () => {
+    findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
+    sendMock.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await service.notifyReportConcluded(report, unit);
+
+    expect(notificationFailureCreateMock).toHaveBeenCalledWith({
+      data: {
+        service: 'notifications',
+        operation: 'notifyReportConcluded',
+        reportInstanceId: report.id,
+        recipients: ['elaborador@formops.local'],
+        cause: 'ECONNREFUSED',
+      },
+    });
+  });
+
+  test('persists a NotificationFailure with an empty recipients list when resolving recipients itself fails', async () => {
+    findManyMock.mockRejectedValue(new Error('connection terminated'));
+
+    await service.notifySubmittedForApproval(report, unit);
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(notificationFailureCreateMock).toHaveBeenCalledWith({
+      data: {
+        service: 'notifications',
+        operation: 'notifySubmittedForApproval',
+        reportInstanceId: report.id,
+        recipients: [],
+        cause: 'connection terminated',
+      },
+    });
+  });
+
+  test('does not throw even when persisting the NotificationFailure itself fails', async () => {
+    findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
+    sendMock.mockRejectedValue(new Error('ECONNREFUSED'));
+    notificationFailureCreateMock.mockRejectedValue(new Error('banco indisponivel'));
+
+    await expect(service.notifyReportConcluded(report, unit)).resolves.toBeUndefined();
+  });
+
+  test('does not persist a NotificationFailure when the notification succeeds', async () => {
+    findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
+
+    await service.notifyReportConcluded(report, unit);
+
+    expect(notificationFailureCreateMock).not.toHaveBeenCalled();
   });
 });

@@ -152,7 +152,15 @@ describe('ValidationService', () => {
   });
 
   describe('uploadValidationEvidence', () => {
-    const file = { buffer: Buffer.from('x'), originalname: 'ev.pdf', mimetype: 'application/pdf', size: 1 } as Express.Multer.File;
+    // T168 — buffer com assinatura binaria real de PDF ("%PDF"), pois
+    // ValidationService agora chama assertEvidenceFileSignatureMatches
+    // antes de subir ao S3.
+    const file = {
+      buffer: Buffer.from('%PDF-1.4\n%%EOF'),
+      originalname: 'ev.pdf',
+      mimetype: 'application/pdf',
+      size: 1,
+    } as Express.Multer.File;
 
     test('throws NotFoundException when the validation record does not exist', async () => {
       findUniqueValidationRecordMock.mockResolvedValue(null);
@@ -183,6 +191,22 @@ describe('ValidationService', () => {
           bucket: 'formops-evidencias',
         },
       });
+    });
+
+    test('rejects with BadRequestException and uploads nothing when the binary signature diverges from the declared mimetype (T168, FR-035)', async () => {
+      findUniqueValidationRecordMock.mockResolvedValue({ id: 'record-1', aprovadorUserId: user.id });
+      const forgedFile = {
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]), // assinatura real de JPEG
+        originalname: 'ev.pdf',
+        mimetype: 'application/pdf', // declarado como PDF
+        size: 4,
+      } as Express.Multer.File;
+
+      await expect(service.uploadValidationEvidence('record-1', user, forgedFile)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(uploadMock).not.toHaveBeenCalled();
+      expect(txCreateEvidenceFileMock).not.toHaveBeenCalled();
     });
   });
 

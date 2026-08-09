@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
@@ -26,7 +26,15 @@ describe('EvidenceService', () => {
     role: RoleName.ELABORADOR,
     primaryUnitId: 'unit-1',
   };
-  const file = { buffer: Buffer.from('x'), originalname: 'ev.pdf', mimetype: 'application/pdf', size: 1 } as Express.Multer.File;
+  // T168 — o buffer precisa ter a assinatura binaria real de um PDF
+  // ("%PDF"), pois EvidenceService agora chama
+  // assertEvidenceFileSignatureMatches antes de subir ao S3.
+  const file = {
+    buffer: Buffer.from('%PDF-1.4\n%%EOF'),
+    originalname: 'ev.pdf',
+    mimetype: 'application/pdf',
+    size: 1,
+  } as Express.Multer.File;
 
   beforeEach(() => {
     findUniqueIndicatorResponseMock = jest.fn();
@@ -94,6 +102,25 @@ describe('EvidenceService', () => {
           bucket: 'formops-evidencias',
         },
       });
+    });
+
+    test('rejects with BadRequestException and uploads nothing when the binary signature diverges from the declared mimetype (T168, FR-035)', async () => {
+      findUniqueIndicatorResponseMock.mockResolvedValue({
+        id: 'response-1',
+        reportInstance: { unitId: 'unit-1', status: ReportStatus.PENDENTE },
+      });
+      const forgedFile = {
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]), // assinatura real de JPEG
+        originalname: 'ev.pdf',
+        mimetype: 'application/pdf', // declarado como PDF
+        size: 4,
+      } as Express.Multer.File;
+
+      await expect(service.uploadForIndicatorResponse('response-1', elaborador, forgedFile)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(uploadMock).not.toHaveBeenCalled();
+      expect(txCreateMock).not.toHaveBeenCalled();
     });
   });
 

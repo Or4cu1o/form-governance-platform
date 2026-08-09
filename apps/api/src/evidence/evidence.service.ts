@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { assertEvidenceFileSignatureMatches } from '../common/evidence-upload.constants';
 import { assertCanEditReportData } from '../common/report-edit-access.util';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -28,6 +29,7 @@ export class EvidenceService {
       throw new NotFoundException('Resposta de indicador nao encontrada');
     }
     assertCanEditReportData(response.reportInstance, user);
+    assertEvidenceFileSignatureMatches(file);
 
     const fileKey = await this.s3Service.upload(file.buffer, file.originalname, file.mimetype);
 

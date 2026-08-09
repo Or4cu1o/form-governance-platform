@@ -51,6 +51,7 @@ describe('ReportExportService', () => {
                 nome: 'Ana',
                 sobrenome: 'Aprovadora',
                 role: RoleName.APROVADOR,
+                jobTitle: 'Gerente de Governanca de Tecnologia da Informacao',
                 primaryUnit: { sigla: 'MATRIZ' },
               },
             },
@@ -101,9 +102,50 @@ describe('ReportExportService', () => {
     expect(payload.rodape.aprovadorResponsavel).toEqual({
       nome: 'Ana',
       sobrenome: 'Aprovadora',
-      cargo: RoleName.APROVADOR,
+      cargo: 'Gerente de Governanca de Tecnologia da Informacao',
       unidade: 'MATRIZ',
     });
+  });
+
+  test('omits cargo from aprovadorResponsavel when the approver has no jobTitle set (T169)', async () => {
+    findUniqueMock.mockResolvedValue(
+      buildReport({
+        indicatorResponses: [
+          {
+            snapshotTitle: 'Chamados: Backlog',
+            snapshotObjective: 'Medir backlog',
+            variableValues: { CA: 10, CB: 1 },
+            calculatedValue: 10,
+            snapshotGoalOperator: GoalOperator.LTE,
+            snapshotGoalValue: 5,
+            isCompliant: false,
+            validationStatus: IndicatorValidationStatus.APROVADO,
+            validationRecords: [
+              {
+                createdAt: new Date('2026-07-09T00:00:00.000Z'),
+                aprovadorUser: {
+                  nome: 'Ana',
+                  sobrenome: 'Aprovadora',
+                  role: RoleName.APROVADOR,
+                  jobTitle: null,
+                  primaryUnit: { sigla: 'MATRIZ' },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const result = await service.export('report-1', 'json', user);
+
+    const payload = JSON.parse(result.body);
+    expect(payload.rodape.aprovadorResponsavel).toEqual({
+      nome: 'Ana',
+      sobrenome: 'Aprovadora',
+      unidade: 'MATRIZ',
+    });
+    expect(payload.rodape.aprovadorResponsavel).not.toHaveProperty('cargo');
   });
 
   test('builds a CSV export with header, indicator rows and footer', async () => {

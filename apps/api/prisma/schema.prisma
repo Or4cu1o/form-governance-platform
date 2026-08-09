@@ -329,13 +329,35 @@ model ReportInstance {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  unit               Unit                @relation(fields: [unitId], references: [id])
-  formTemplate       FormTemplate        @relation(fields: [formTemplateId], references: [id])
-  indicatorResponses IndicatorResponse[]
-  submissions        ReportSubmission[]
+  unit                 Unit                   @relation(fields: [unitId], references: [id])
+  formTemplate         FormTemplate           @relation(fields: [formTemplateId], references: [id])
+  indicatorResponses   IndicatorResponse[]
+  submissions          ReportSubmission[]
+  notificationFailures NotificationFailure[]
 
   @@unique([unitId, referenceMonth])
   @@map("report_instances")
+  @@schema("public")
+}
+
+// T170/FR-123/FR-112 — falha de notificacao (servico acessorio) MUST ser
+// registrada de forma consultavel, com servico/operacao/causa (regra geral
+// de FR-123) e destinatario/transicao afetados (o que FR-112 acrescenta),
+// nao apenas em logger.error da aplicacao. Escrita best-effort, nunca
+// reverte nem bloqueia a transacao de negocio que a originou.
+model NotificationFailure {
+  id               String   @id @default(uuid())
+  service          String
+  operation        String
+  cause            String
+  recipients       String[]
+  reportInstanceId String   @map("report_instance_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  reportInstance ReportInstance @relation(fields: [reportInstanceId], references: [id])
+
+  @@index([reportInstanceId])
+  @@map("notification_failures")
   @@schema("public")
 }
 

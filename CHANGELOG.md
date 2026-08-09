@@ -73,6 +73,15 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   `{ statusCode, message, error }` em português do Brasil (FR-124) para toda resposta de falha da
   API — traduz a frase-motivo default do Nest, preserva código de erro explícito não-default, e
   nunca repassa a mensagem de uma exceção não tratada (ex.: erro do Prisma) ao cliente.
+- `assertEvidenceFileSignatureMatches` (T168, `apps/api/src/common/evidence-upload.constants.ts`):
+  checagem manual dos bytes iniciais (magic numbers) de PDF/PNG/JPEG/WEBP contra o mimetype
+  declarado, chamada em `EvidenceService`/`ValidationService` antes de qualquer upload ao S3 — 400
+  e nada gravado na divergência (FR-035). O validador embutido do Nest (`file-type`, ESM-only) foi
+  descartado por ser incompatível com o sandbox `vm` do Jest sem flag experimental.
+- `NotificationFailure` (T170, `schema.prisma` + migração `20260809100000_add_notification_failure`):
+  registro consultável de falha de notificação — serviço, operação, causa (FR-123), destinatários e
+  a `ReportInstance` afetada (FR-112) — substituindo o `logger.error` isolado de
+  `NotificationsService`.
 
 ### Changed
 
@@ -109,6 +118,9 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   catálogo canônico com a unidade real de cada indicador ("%" ou "pontos"), preenche `jobTitle` do
   usuário `APROVADOR` (FR-074) e provisiona explicitamente a linha única de `SystemSetting` com os
   sete parâmetros novos.
+- `ReportExportService` (T169): `rodape.aprovadorResponsavel.cargo` passa a vir de `User.jobTitle`
+  em vez de `User.role` — o papel de acesso (`APROVADOR`) não é o cargo funcional da pessoa. Omitido
+  do payload (JSON e CSV) quando o aprovador ainda não tem `jobTitle` cadastrado (T095 pendente).
 
 ### Fixed
 
@@ -137,6 +149,7 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   revogação de DML concluída (T035-T037, com segregação de role `formops_app`); transversais
   concluídas (T038-T040: `ValidationPipe` já satisfeito, filtro de exceção pt-BR, seed de
   demonstração com catálogo/`jobTitle`/`SystemSetting`).
-- **Fase 12 — Convergência** (T166-T171): T166 e T167 concluídas junto com a Fase 2 (mesma correção,
-  dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito funcional, não
-  tarefa separada). T168-T170 pendentes.
+- **Fase 12 — Convergência** (T166-T171): concluída. T166 e T167 concluídas junto com a Fase 2 (mesma
+  correção, dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito
+  funcional, não tarefa separada); T168 (assinatura binária de evidência), T169 (cargo funcional no
+  documento selado) e T170 (registro consultável de falha de notificação) concluídas nesta sessão.

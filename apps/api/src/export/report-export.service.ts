@@ -106,11 +106,16 @@ export class ReportExportService {
       rodape: {
         veredictoFinal:
           VEREDICTO_BY_STATUS[report.status] + (reprovadoPendenteCorrecao ? ' (reprovado pela Matriz)' : ''),
+        // T169 — cargo funcional (User.jobTitle), nao o papel de acesso
+        // (User.role). T095 (tela de admin para preencher jobTitle) ainda
+        // nao existe, entao o campo fica ausente para aprovadores sem
+        // jobTitle cadastrado: um documento selado que declara cargo errado
+        // e pior que um que nao declara cargo.
         aprovadorResponsavel: mostRecent
           ? {
               nome: mostRecent.aprovadorUser.nome,
               sobrenome: mostRecent.aprovadorUser.sobrenome,
-              cargo: mostRecent.aprovadorUser.role,
+              ...(mostRecent.aprovadorUser.jobTitle ? { cargo: mostRecent.aprovadorUser.jobTitle } : {}),
               unidade: mostRecent.aprovadorUser.primaryUnit.sigla,
             }
           : null,
@@ -139,7 +144,7 @@ export class ReportExportService {
       [
         'Aprovador Responsavel',
         payload.rodape.aprovadorResponsavel
-          ? `${payload.rodape.aprovadorResponsavel.nome} ${payload.rodape.aprovadorResponsavel.sobrenome} (${payload.rodape.aprovadorResponsavel.cargo} - ${payload.rodape.aprovadorResponsavel.unidade})`
+          ? `${payload.rodape.aprovadorResponsavel.nome} ${payload.rodape.aprovadorResponsavel.sobrenome} (${payload.rodape.aprovadorResponsavel.cargo ?? 'cargo nao informado'} - ${payload.rodape.aprovadorResponsavel.unidade})`
           : 'N/A',
       ],
       ['Gerado em', payload.rodape.geradoEm],

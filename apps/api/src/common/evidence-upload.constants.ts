@@ -15,6 +15,57 @@ const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   'image/webp',
 ]);
 
+// T168 — o mimetype acima e o header enviado pelo cliente, trivialmente
+// forjavel, e serve so para rejeitar cedo (antes de ler o arquivo inteiro
+// ou de gastar uma chamada ao S3). A checagem que realmente nao pode ser
+// forjada e ler os primeiros bytes do arquivo (assinatura binaria / magic
+// numbers) e compara-los contra o que o mimetype declarado promete.
+//
+// O validador embutido do Nest (FileTypeValidator) faria isso via pacote
+// `file-type`, mas esse pacote e ESM-only e so importavel atraves de
+// `import()` dinamico — o que funciona em runtime real, porem falha
+// silenciosamente sob o sandbox `vm` do Jest sem a flag experimental
+// --experimental-vm-modules (confirmado empiricamente: a promise rejeita
+// com ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG, engolida pelo
+// try/catch do proprio Nest, fazendo o validador sempre devolver `false`
+// em teste). Mudar a config global do Jest para contornar isso arriscaria
+// as ~53 suites existentes por uma checagem de exatamente 4 assinaturas
+// conhecidas — a checagem manual abaixo e mais simples, determinística e
+// testavel sem esse atrito.
+const EVIDENCE_SIGNATURE_CHECKS: Record<string, (buffer: Buffer) => boolean> = {
+  'application/pdf': (buf) => buf.length >= 4 && buf.subarray(0, 4).toString('latin1') === '%PDF',
+  'image/png': (buf) =>
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a,
+  'image/jpeg': (buf) => buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff,
+  'image/webp': (buf) =>
+    buf.length >= 12 &&
+    buf.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    buf.subarray(8, 12).toString('latin1') === 'WEBP',
+};
+
+// T168 — chamado pelo service (EvidenceService/ValidationService) antes de
+// qualquer escrita no S3/banco, com o buffer completo ja em memoria
+// (multer.memoryStorage, o default do FileInterceptor sem `storage`
+// explicito). O mimetype filter acima ja rejeitou tipos fora da lista
+// permitida; aqui a divergencia entre o que foi declarado e o que os bytes
+// realmente sao vira 400, sem gravar nada (FR-035).
+export function assertEvidenceFileSignatureMatches(file: Express.Multer.File): void {
+  const check = EVIDENCE_SIGNATURE_CHECKS[file.mimetype];
+  if (!check || !check(file.buffer)) {
+    throw new BadRequestException(
+      `O conteudo do arquivo nao corresponde ao tipo declarado (${file.mimetype}).`,
+    );
+  }
+}
+
 export function EVIDENCE_MIME_TYPE_FILTER(
   _req: unknown,
   file: Express.Multer.File,

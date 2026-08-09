@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, ReportStatus, ValidationVerdict } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { assertEvidenceFileSignatureMatches } from '../common/evidence-upload.constants';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { addBusinessDays, getMandatoryNationalHolidays, toUtcMidnight } from '../lifecycle/business-days.util';
@@ -64,6 +65,7 @@ export class ValidationService {
     if (record.aprovadorUserId !== user.id) {
       throw new ForbiddenException('Somente o aprovador responsavel pode anexar evidencia a este registro');
     }
+    assertEvidenceFileSignatureMatches(file);
 
     const fileKey = await this.s3Service.upload(file.buffer, file.originalname, file.mimetype);
     return this.auditContextService.runWithAuditContext((tx) =>
