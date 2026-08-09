@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor';
 import { CommonModule } from './common/common.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { ExportModule } from './export/export.module';
@@ -33,6 +35,7 @@ import { ValidationModule } from './validation/validation.module';
     UsersModule,
     AuthModule,
     AdminModule,
+    AuditModule,
     FormsModule,
     LifecycleModule,
     ReportsModule,
@@ -45,6 +48,9 @@ import { ValidationModule } from './validation/validation.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Roda apos os guards (req.user ja populado quando autenticado) e antes
+    // de qualquer handler — T028/T166.
+    { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },
   ],
 })
 export class AppModule {}

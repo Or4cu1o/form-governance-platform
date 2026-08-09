@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ReportStatus, Unit } from '@prisma/client';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getMandatoryNationalHolidays, getNthBusinessDayOfMonth, toUtcMidnight } from './business-days.util';
@@ -20,6 +21,7 @@ export class ReportLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   async openPeriodForUnit(unit: Unit, referenceMonth: Date) {
@@ -59,7 +61,10 @@ export class ReportLifecycleService {
       include: { indicatorResponses: true },
     });
 
-    return this.prisma.$transaction(async (tx) => {
+    // Cria IndicatorResponse (tabela auditada) — precisa de contexto ativo,
+    // seja o da requisicao HTTP (abertura via US1/T052a) seja o do ator de
+    // sistema (cron, ver LifecycleCronService/SystemActor — T028b).
+    return this.auditContextService.runWithAuditContext(async (tx) => {
       const reportInstance = await tx.reportInstance.create({
         data: {
           unitId: unit.id,
@@ -91,6 +96,11 @@ export class ReportLifecycleService {
             snapshotScoreWeight: indicator.scoreWeight,
             variableValues: shouldCloneResidentState ? (previousResponse!.variableValues as object) : {},
             isClonedFromResident: shouldCloneResidentState,
+            // updatedAt deixou de ser auto-gerenciado pelo Prisma (A1):
+            // IndicatorResponse e identidade estavel, nao sofre UPDATE
+            // isolado. O timestamp e mantido explicitamente por quem
+            // escreve — aqui, a criacao inicial vazia do periodo.
+            updatedAt: new Date(),
           },
         });
       }

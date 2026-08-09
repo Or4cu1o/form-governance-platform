@@ -10,8 +10,12 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { checkCompliance, evaluateFormula } from '../src/forms/formula-evaluator.util';
+import { AuditContextService } from '../src/common/services/audit-context.service';
+import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../src/common/services/system-actor';
+import type { PrismaService } from '../src/prisma/prisma.service';
 
 const prisma = new PrismaClient();
+const auditContextService = new AuditContextService(prisma as unknown as PrismaService);
 
 const SALT_ROUNDS = 10;
 const DEV_TEST_PASSWORD = 'FormOpsTeste@2026';
@@ -366,6 +370,7 @@ function generateAnalysisAndPlan(
 // Geração dos 6 relatórios mensais concluídos (Janeiro a Junho de 2026)
 // ---------------------------------------------------------------------------
 async function generateConcludedMonthlyReports(
+  db: Prisma.TransactionClient,
   unitId: string,
   template: TemplateWithTopics,
   templatePrefix: 'N1' | 'N3',
@@ -388,7 +393,7 @@ async function generateConcludedMonthlyReports(
     const submittedForApprovalAt = new Date(Date.UTC(year, m + 1, 7, 10, 15));
     const concludedAt = new Date(Date.UTC(year, m + 1, 9, 16, 45));
 
-    const reportInstance = await prisma.reportInstance.upsert({
+    const reportInstance = await db.reportInstance.upsert({
       where: {
         unitId_referenceMonth: {
           unitId,
@@ -447,7 +452,7 @@ async function generateConcludedMonthlyReports(
         calculatedIndicatorScore += Number(indicator.scoreWeight);
       }
 
-      const response = await prisma.indicatorResponse.upsert({
+      const response = await db.indicatorResponse.upsert({
         where: {
           reportInstanceId_formIndicatorId: {
             reportInstanceId: reportInstance.id,
@@ -487,10 +492,11 @@ async function generateConcludedMonthlyReports(
           criticalAnalysis,
           actionPlan,
           updatedByUserId: elaboradorId,
+          updatedAt: new Date(),
         },
       });
 
-      const existingRecord = await prisma.validationRecord.findFirst({
+      const existingRecord = await db.validationRecord.findFirst({
         where: {
           indicatorResponseId: response.id,
           aprovadorUserId: aprovadorMatrizId,
@@ -498,7 +504,7 @@ async function generateConcludedMonthlyReports(
       });
 
       if (!existingRecord) {
-        await prisma.validationRecord.create({
+        await db.validationRecord.create({
           data: {
             indicatorResponseId: response.id,
             aprovadorUserId: aprovadorMatrizId,
@@ -511,7 +517,7 @@ async function generateConcludedMonthlyReports(
 
     const finalScore = Math.round(calculatedIndicatorScore * 100) / 100;
 
-    await prisma.reportInstance.update({
+    await db.reportInstance.update({
       where: { id: reportInstance.id },
       data: {
         indicatorScore: finalScore,
@@ -524,13 +530,17 @@ async function generateConcludedMonthlyReports(
 // ---------------------------------------------------------------------------
 // Geração do relatório do mês vigente (Julho/2026) em status PENDENTE
 // ---------------------------------------------------------------------------
-async function generatePendingReport(unitId: string, template: TemplateWithTopics): Promise<void> {
+async function generatePendingReport(
+  db: Prisma.TransactionClient,
+  unitId: string,
+  template: TemplateWithTopics,
+): Promise<void> {
   const currentMonthRef = new Date(Date.UTC(2026, 6, 1)); // 01/07/2026
   const elabDueDateJul = new Date(Date.UTC(2026, 7, 10)); // 6º DU de Agosto/2026 (A prazo)
   const revDueDateJul = new Date(Date.UTC(2026, 7, 12));
   const appDueDateJul = new Date(Date.UTC(2026, 7, 14));
 
-  const pendingReportJul = await prisma.reportInstance.upsert({
+  const pendingReportJul = await db.reportInstance.upsert({
     where: {
       unitId_referenceMonth: {
         unitId,
@@ -557,7 +567,7 @@ async function generatePendingReport(unitId: string, template: TemplateWithTopic
 
   const currentIndicators = template.topics.flatMap((t) => t.indicators);
   for (const indicator of currentIndicators) {
-    await prisma.indicatorResponse.upsert({
+    await db.indicatorResponse.upsert({
       where: {
         reportInstanceId_formIndicatorId: {
           reportInstanceId: pendingReportJul.id,
@@ -585,6 +595,7 @@ async function generatePendingReport(unitId: string, template: TemplateWithTopic
         snapshotGoalValue: indicator.goalValue,
         snapshotScoreWeight: indicator.scoreWeight,
         validationStatus: IndicatorValidationStatus.EM_REVISAO,
+        updatedAt: new Date(),
       },
     });
   }
@@ -599,182 +610,198 @@ async function main() {
 
   console.log('=== Iniciando Seed da Demonstração (5 Unidades / Jan-Jun Concluídos + Julho PENDENTE a Prazo) ===');
 
-  // Limpar relatórios de meses posteriores a julho de 2026 (mês 8 em diante)
-  const futureReports = await prisma.reportInstance.findMany({
-    where: { referenceMonth: { gte: new Date(Date.UTC(2026, 7, 1)) } },
-    select: { id: true },
-  });
-  const futureIds = futureReports.map((r) => r.id);
-  if (futureIds.length > 0) {
-    await prisma.indicatorResponse.deleteMany({ where: { reportInstanceId: { in: futureIds } } });
-    await prisma.reportInstance.deleteMany({ where: { id: { in: futureIds } } });
-  }
+  // Todo o corpo abaixo escreve em tabelas auditadas (indicator_responses ja
+  // hoje; unit/user a partir de T167) — roda inteiro dentro de um unico
+  // AuditContext de sistema (T028b). O parametro `prisma` deste callback
+  // ofusca deliberadamente a constante `prisma` do modulo (mesma API de
+  // model delegate), para que o corpo abaixo nao precisasse ser reescrito
+  // chamada a chamada.
+  await runAsSystemActor(
+    auditContextService,
+    'Seed de demonstracao — 5 unidades hospitalares + MATRIZ',
+    AUDIT_ORIGIN_SEED,
+    () =>
+      auditContextService.runWithAuditContext(async (prisma) => {
+        // Limpar relatórios de meses posteriores a julho de 2026 (mês 8 em diante)
+        const futureReports = await prisma.reportInstance.findMany({
+          where: { referenceMonth: { gte: new Date(Date.UTC(2026, 7, 1)) } },
+          select: { id: true },
+        });
+        const futureIds = futureReports.map((r) => r.id);
+        if (futureIds.length > 0) {
+          await prisma.indicatorResponse.deleteMany({ where: { reportInstanceId: { in: futureIds } } });
+          await prisma.reportInstance.deleteMany({ where: { id: { in: futureIds } } });
+        }
 
-  // 1. Obter os formulários N1 e N3 do banco
-  const n1Template = await prisma.formTemplate.findFirst({
-    where: { name: { startsWith: 'N1' } },
-    include: { topics: { include: { indicators: true } } },
-  });
-  const n3Template = await prisma.formTemplate.findFirst({
-    where: { name: { startsWith: 'N3' } },
-    include: { topics: { include: { indicators: true } } },
-  });
+        // 1. Obter os formulários N1 e N3 do banco
+        const n1Template = await prisma.formTemplate.findFirst({
+          where: { name: { startsWith: 'N1' } },
+          include: { topics: { include: { indicators: true } } },
+        });
+        const n3Template = await prisma.formTemplate.findFirst({
+          where: { name: { startsWith: 'N3' } },
+          include: { topics: { include: { indicators: true } } },
+        });
 
-  if (!n1Template || !n3Template) {
-    throw new Error(
-      'Formulários N1 e N3 não foram encontrados no banco. Execute "npm run seed:proprietary" antes do seed de demonstração.',
-    );
-  }
+        if (!n1Template || !n3Template) {
+          throw new Error(
+            'Formulários N1 e N3 não foram encontrados no banco. Execute "npm run seed:proprietary" antes do seed de demonstração.',
+          );
+        }
 
-  // 2. Garantir o Usuário Aprovador da Matriz para aprovar as demonstrações
-  let aprovadorMatriz = await prisma.user.findFirst({
-    where: { role: RoleName.APROVADOR },
-  });
+        // 2. Garantir o Usuário Aprovador da Matriz para aprovar as demonstrações
+        let aprovadorMatriz = await prisma.user.findFirst({
+          where: { role: RoleName.APROVADOR },
+        });
 
-  if (!aprovadorMatriz) {
-    const matrizUnit = await prisma.unit.findFirstOrThrow({ where: { sigla: 'MATRIZ' } });
-    const passwordHash = await bcrypt.hash(DEV_TEST_PASSWORD, SALT_ROUNDS);
-    aprovadorMatriz = await prisma.user.create({
-      data: {
-        matricula: '10004',
-        nome: 'Aprovador',
-        sobrenome: 'Matriz',
-        email: 'aprovador@matriz.dev',
-        passwordHash,
-        role: RoleName.APROVADOR,
-        primaryUnitId: matrizUnit.id,
-      },
-    });
-  }
+        if (!aprovadorMatriz) {
+          const matrizUnit = await prisma.unit.findFirstOrThrow({ where: { sigla: 'MATRIZ' } });
+          const passwordHash = await bcrypt.hash(DEV_TEST_PASSWORD, SALT_ROUNDS);
+          aprovadorMatriz = await prisma.user.create({
+            data: {
+              matricula: '10004',
+              nome: 'Aprovador',
+              sobrenome: 'Matriz',
+              email: 'aprovador@matriz.dev',
+              passwordHash,
+              role: RoleName.APROVADOR,
+              primaryUnitId: matrizUnit.id,
+            },
+          });
+        }
 
-  const passwordHash = await bcrypt.hash(DEV_TEST_PASSWORD, SALT_ROUNDS);
+        const passwordHash = await bcrypt.hash(DEV_TEST_PASSWORD, SALT_ROUNDS);
 
-  // 3. Processar cada uma das 5 unidades hospitalares
-  for (let uIndex = 0; uIndex < DEMO_UNITS.length; uIndex++) {
-    const config = DEMO_UNITS[uIndex];
-    const template = config.templateNamePrefix === 'N1' ? n1Template : n3Template;
+        // 3. Processar cada uma das 5 unidades hospitalares
+        for (let uIndex = 0; uIndex < DEMO_UNITS.length; uIndex++) {
+          const config = DEMO_UNITS[uIndex];
+          const template = config.templateNamePrefix === 'N1' ? n1Template : n3Template;
 
-    // 3.1 Upsert da Unidade
-    const unit = await prisma.unit.upsert({
-      where: { sigla: config.sigla },
-      update: {
-        nome: config.nome,
-        level: config.level,
-        formTemplateId: template.id,
-        isActive: true,
-      },
-      create: {
-        sigla: config.sigla,
-        nome: config.nome,
-        level: config.level,
-        formTemplateId: template.id,
-        isActive: true,
-      },
-    });
+          // 3.1 Upsert da Unidade
+          const unit = await prisma.unit.upsert({
+            where: { sigla: config.sigla },
+            update: {
+              nome: config.nome,
+              level: config.level,
+              formTemplateId: template.id,
+              isActive: true,
+            },
+            create: {
+              sigla: config.sigla,
+              nome: config.nome,
+              level: config.level,
+              formTemplateId: template.id,
+              isActive: true,
+            },
+          });
 
-    // 3.2 Upsert do Elaborador da Unidade
-    const elaborador = await prisma.user.upsert({
-      where: { matricula: config.elaboradorMatricula },
-      update: {
-        nome: config.elaboradorNome,
-        sobrenome: config.elaboradorSobrenome,
-        email: config.elaboradorEmail,
-        passwordHash,
-        role: RoleName.ELABORADOR,
-        primaryUnitId: unit.id,
-        isActive: true,
-      },
-      create: {
-        matricula: config.elaboradorMatricula,
-        nome: config.elaboradorNome,
-        sobrenome: config.elaboradorSobrenome,
-        email: config.elaboradorEmail,
-        passwordHash,
-        role: RoleName.ELABORADOR,
-        primaryUnitId: unit.id,
-      },
-    });
+          // 3.2 Upsert do Elaborador da Unidade
+          const elaborador = await prisma.user.upsert({
+            where: { matricula: config.elaboradorMatricula },
+            update: {
+              nome: config.elaboradorNome,
+              sobrenome: config.elaboradorSobrenome,
+              email: config.elaboradorEmail,
+              passwordHash,
+              role: RoleName.ELABORADOR,
+              primaryUnitId: unit.id,
+              isActive: true,
+            },
+            create: {
+              matricula: config.elaboradorMatricula,
+              nome: config.elaboradorNome,
+              sobrenome: config.elaboradorSobrenome,
+              email: config.elaboradorEmail,
+              passwordHash,
+              role: RoleName.ELABORADOR,
+              primaryUnitId: unit.id,
+            },
+          });
 
-    // 3.3 Upsert do Revisor da Unidade
-    await prisma.user.upsert({
-      where: { matricula: config.revisorMatricula },
-      update: {
-        nome: config.revisorNome,
-        sobrenome: config.revisorSobrenome,
-        email: config.revisorEmail,
-        passwordHash,
-        role: RoleName.REVISOR,
-        primaryUnitId: unit.id,
-        isActive: true,
-      },
-      create: {
-        matricula: config.revisorMatricula,
-        nome: config.revisorNome,
-        sobrenome: config.revisorSobrenome,
-        email: config.revisorEmail,
-        passwordHash,
-        role: RoleName.REVISOR,
-        primaryUnitId: unit.id,
-      },
-    });
+          // 3.3 Upsert do Revisor da Unidade
+          await prisma.user.upsert({
+            where: { matricula: config.revisorMatricula },
+            update: {
+              nome: config.revisorNome,
+              sobrenome: config.revisorSobrenome,
+              email: config.revisorEmail,
+              passwordHash,
+              role: RoleName.REVISOR,
+              primaryUnitId: unit.id,
+              isActive: true,
+            },
+            create: {
+              matricula: config.revisorMatricula,
+              nome: config.revisorNome,
+              sobrenome: config.revisorSobrenome,
+              email: config.revisorEmail,
+              passwordHash,
+              role: RoleName.REVISOR,
+              primaryUnitId: unit.id,
+            },
+          });
 
-    console.log(`✓ Unidade ${unit.sigla} (${unit.nome}) e usuários de acesso sincronizados.`);
+          console.log(`✓ Unidade ${unit.sigla} (${unit.nome}) e usuários de acesso sincronizados.`);
 
-    // 4. Gerar 6 relatórios concluídos (Jan-Jun/2026), com não-conformidade
-    //    determinística por unidade/mês/indicador, e o relatório PENDENTE de Julho.
-    await generateConcludedMonthlyReports(
-      unit.id,
-      template,
-      config.templateNamePrefix,
-      elaborador.id,
-      aprovadorMatriz.id,
-      (m, i) => (uIndex * 7 + m * 5 + i * 3) % 10 < 3,
-    );
-    await generatePendingReport(unit.id, template);
+          // 4. Gerar 6 relatórios concluídos (Jan-Jun/2026), com não-conformidade
+          //    determinística por unidade/mês/indicador, e o relatório PENDENTE de Julho.
+          await generateConcludedMonthlyReports(
+            prisma,
+            unit.id,
+            template,
+            config.templateNamePrefix,
+            elaborador.id,
+            aprovadorMatriz.id,
+            (m, i) => (uIndex * 7 + m * 5 + i * 3) % 10 < 3,
+          );
+          await generatePendingReport(prisma, unit.id, template);
 
-    console.log(`  └─ 6 relatórios concluídos (Jan-Jun) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados para ${config.sigla}.`);
-  }
+          console.log(`  └─ 6 relatórios concluídos (Jan-Jun) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados para ${config.sigla}.`);
+        }
 
-  // 4. Unidade MATRIZ: também precisa de histórico para permitir a demonstração
-  //    da elaboração (não apenas revisão/aprovação como nas 5 unidades acima).
-  //    Indicadores dentro/fora da meta sorteados aleatoriamente por indicador,
-  //    com taxa de não-conformidade sorteada por mês entre 25% e 35% (variável).
-  const matrizTemplate = n1Template;
-  const matrizUnit = await prisma.unit.upsert({
-    where: { sigla: 'MATRIZ' },
-    update: { formTemplateId: matrizTemplate.id },
-    create: { sigla: 'MATRIZ', nome: 'Matriz', level: UnitLevel.A, formTemplateId: matrizTemplate.id },
-  });
-  const matrizElaborador = await prisma.user.findFirstOrThrow({ where: { matricula: '10002' } });
+        // 4. Unidade MATRIZ: também precisa de histórico para permitir a demonstração
+        //    da elaboração (não apenas revisão/aprovação como nas 5 unidades acima).
+        //    Indicadores dentro/fora da meta sorteados aleatoriamente por indicador,
+        //    com taxa de não-conformidade sorteada por mês entre 25% e 35% (variável).
+        const matrizTemplate = n1Template;
+        const matrizUnit = await prisma.unit.upsert({
+          where: { sigla: 'MATRIZ' },
+          update: { formTemplateId: matrizTemplate.id },
+          create: { sigla: 'MATRIZ', nome: 'Matriz', level: UnitLevel.A, formTemplateId: matrizTemplate.id },
+        });
+        const matrizElaborador = await prisma.user.findFirstOrThrow({ where: { matricula: '10002' } });
 
-  const MIN_NON_COMPLIANCE_RATE = 0.25;
-  const NON_COMPLIANCE_RATE_SPREAD = 0.1; // faixa de 25% a 35%
-  const monthlyNonComplianceRates = Array.from(
-    { length: 6 },
-    () => MIN_NON_COMPLIANCE_RATE + Math.random() * NON_COMPLIANCE_RATE_SPREAD,
+        const MIN_NON_COMPLIANCE_RATE = 0.25;
+        const NON_COMPLIANCE_RATE_SPREAD = 0.1; // faixa de 25% a 35%
+        const monthlyNonComplianceRates = Array.from(
+          { length: 6 },
+          () => MIN_NON_COMPLIANCE_RATE + Math.random() * NON_COMPLIANCE_RATE_SPREAD,
+        );
+        const matrizIndicatorCount = matrizTemplate.topics.flatMap((t) => t.indicators).length;
+        const monthlyNonCompliantIndices = monthlyNonComplianceRates.map((rate) =>
+          pickNonCompliantIndices(matrizIndicatorCount, rate),
+        );
+
+        await generateConcludedMonthlyReports(
+          prisma,
+          matrizUnit.id,
+          matrizTemplate,
+          'N1',
+          matrizElaborador.id,
+          aprovadorMatriz.id,
+          (m, i) => monthlyNonCompliantIndices[m].has(i),
+        );
+        await generatePendingReport(prisma, matrizUnit.id, matrizTemplate);
+
+        console.log(
+          `✓ Unidade MATRIZ: 6 relatórios concluídos (Jan-Jun, ${monthlyNonComplianceRates
+            .map((r) => `${Math.round(r * 100)}%`)
+            .join('/')} fora da meta por mês) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados.`,
+        );
+
+        console.log('\n=== Seed de Demonstração Concluído com Sucesso! ===');
+      }),
   );
-  const matrizIndicatorCount = matrizTemplate.topics.flatMap((t) => t.indicators).length;
-  const monthlyNonCompliantIndices = monthlyNonComplianceRates.map((rate) =>
-    pickNonCompliantIndices(matrizIndicatorCount, rate),
-  );
-
-  await generateConcludedMonthlyReports(
-    matrizUnit.id,
-    matrizTemplate,
-    'N1',
-    matrizElaborador.id,
-    aprovadorMatriz.id,
-    (m, i) => monthlyNonCompliantIndices[m].has(i),
-  );
-  await generatePendingReport(matrizUnit.id, matrizTemplate);
-
-  console.log(
-    `✓ Unidade MATRIZ: 6 relatórios concluídos (Jan-Jun, ${monthlyNonComplianceRates
-      .map((r) => `${Math.round(r * 100)}%`)
-      .join('/')} fora da meta por mês) + 1 relatório PENDENTE A PRAZO (Julho 2026) gerados.`,
-  );
-
-  console.log('\n=== Seed de Demonstração Concluído com Sucesso! ===');
 }
 
 main()

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, ReportStatus, ValidationVerdict } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { addBusinessDays, getMandatoryNationalHolidays, toUtcMidnight } from '../lifecycle/business-days.util';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -18,6 +19,7 @@ export class ValidationService {
     private readonly s3Service: S3Service,
     private readonly notificationsService: NotificationsService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   async validateIndicator(indicatorResponseId: string, user: AuthenticatedUser, dto: ValidateIndicatorDto) {
@@ -37,7 +39,7 @@ export class ValidationService {
         ? IndicatorValidationStatus.APROVADO
         : IndicatorValidationStatus.REPROVADO;
 
-    return this.prisma.runWithAuditActor(user.id, async (tx) => {
+    return this.auditContextService.runWithAuditContext(async (tx) => {
       const record = await tx.validationRecord.create({
         data: {
           indicatorResponseId,
@@ -64,7 +66,7 @@ export class ValidationService {
     }
 
     const fileKey = await this.s3Service.upload(file.buffer, file.originalname, file.mimetype);
-    return this.prisma.runWithAuditActor(user.id, (tx) =>
+    return this.auditContextService.runWithAuditContext((tx) =>
       tx.evidenceFile.create({
         data: {
           validationRecordId,
@@ -73,12 +75,13 @@ export class ValidationService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: user.id,
+          bucket: this.s3Service.getBucketName(),
         },
       }),
     );
   }
 
-  async finalizeReport(reportInstanceId: string, user: AuthenticatedUser) {
+  async finalizeReport(reportInstanceId: string) {
     const report = await this.prisma.reportInstance.findUnique({
       where: { id: reportInstanceId },
       include: { indicatorResponses: true, unit: true },
@@ -124,7 +127,7 @@ export class ValidationService {
     const slaDeflatorApplied = (isElaborationOnTime ? 0 : deflator) + (isReviewOnTime ? 0 : deflator);
     const totalScore = Math.max(0, indicatorScore - slaDeflatorApplied);
 
-    const updated = await this.prisma.runWithAuditActor(user.id, async (tx) => {
+    const updated = await this.auditContextService.runWithAuditContext(async (tx) => {
       if (hasRejection) {
         const holidays = getMandatoryNationalHolidays(new Date().getUTCFullYear());
         const slaExtensionDueDate = addBusinessDays(new Date(), settings.slaReprovalExtensionDays, holidays);

@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../storage/s3.service';
@@ -13,7 +14,7 @@ describe('EvidenceService', () => {
   let uploadMock: jest.Mock;
   let getPresignedDownloadUrlMock: jest.Mock;
   let assertReadAccessMock: jest.Mock;
-  let runWithAuditActorMock: jest.Mock;
+  let runWithAuditContextMock: jest.Mock;
   let txCreateMock: jest.Mock;
 
   const elaborador: AuthenticatedUser = {
@@ -34,22 +35,23 @@ describe('EvidenceService', () => {
     getPresignedDownloadUrlMock = jest.fn().mockResolvedValue('https://minio.local/signed-url');
     assertReadAccessMock = jest.fn();
     txCreateMock = jest.fn().mockResolvedValue({ id: 'evidence-1' });
-    runWithAuditActorMock = jest.fn((_userId: string, fn: (tx: unknown) => unknown) =>
-      fn({ evidenceFile: { create: txCreateMock } }),
-    );
+    runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) => fn({ evidenceFile: { create: txCreateMock } }));
 
     const prisma = {
       indicatorResponse: { findUnique: findUniqueIndicatorResponseMock },
       evidenceFile: { findUnique: findUniqueEvidenceFileMock },
-      runWithAuditActor: runWithAuditActorMock,
     } as unknown as PrismaService;
     const s3Service = {
       upload: uploadMock,
       getPresignedDownloadUrl: getPresignedDownloadUrlMock,
+      getBucketName: jest.fn().mockReturnValue('formops-evidencias'),
     } as unknown as S3Service;
     const unitAccessService = { assertReadAccess: assertReadAccessMock } as unknown as UnitAccessService;
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
 
-    service = new EvidenceService(prisma, s3Service, unitAccessService);
+    service = new EvidenceService(prisma, s3Service, unitAccessService, auditContextService);
   });
 
   describe('uploadForIndicatorResponse', () => {
@@ -89,6 +91,7 @@ describe('EvidenceService', () => {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: elaborador.id,
+          bucket: 'formops-evidencias',
         },
       });
     });

@@ -1,13 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { assertCanEditReportData } from '../common/report-edit-access.util';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { checkCompliance, evaluateFormula } from '../forms/formula-evaluator.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateIndicatorResponseDto } from './dto/update-indicator-response.dto';
 
 @Injectable()
 export class IndicatorResponsesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditContextService: AuditContextService,
+  ) {}
 
   async updateValues(responseId: string, user: AuthenticatedUser, dto: UpdateIndicatorResponseDto) {
     const response = await this.prisma.indicatorResponse.findUnique({
@@ -41,7 +45,7 @@ export class IndicatorResponsesService {
       isCompliant = checkCompliance(calculatedValue, response.snapshotGoalOperator, Number(response.snapshotGoalValue));
     }
 
-    return this.prisma.runWithAuditActor(user.id, (tx) =>
+    return this.auditContextService.runWithAuditContext((tx) =>
       tx.indicatorResponse.update({
         where: { id: responseId },
         data: {

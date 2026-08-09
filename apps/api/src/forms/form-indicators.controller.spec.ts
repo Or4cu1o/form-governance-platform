@@ -18,6 +18,7 @@ describe('FormIndicatorsController', () => {
     formulaExpression: '(CB / CA) * 100',
     goalOperator: GoalOperator.LTE,
     goalValue: 5,
+    catalogEntryId: 'catalog-1',
   };
 
   beforeEach(() => {

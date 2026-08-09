@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,7 +39,7 @@ describe('ReportInstancesService', () => {
     findUniqueMock = jest.fn();
     updateMock = jest.fn();
     updateManyMock = jest.fn();
-    transactionMock = jest.fn(async (_userId: string, fn: (tx: unknown) => unknown) =>
+    transactionMock = jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ indicatorResponse: { updateMany: updateManyMock }, reportInstance: { update: updateMock } }),
     );
     hasOrgWideReadAccessMock = jest.fn();
@@ -52,8 +53,8 @@ describe('ReportInstancesService', () => {
     const prisma = {
       reportInstance: { findMany: findManyMock, findUnique: findUniqueMock, update: updateMock },
       unit: { findUnique: findUniqueUnitMock },
-      runWithAuditActor: transactionMock,
     } as unknown as PrismaService;
+    const auditContextService = { runWithAuditContext: transactionMock } as unknown as AuditContextService;
 
     const unitAccessService = {
       hasOrgWideReadAccess: hasOrgWideReadAccessMock,
@@ -70,7 +71,13 @@ describe('ReportInstancesService', () => {
       openPeriodForUnit: openPeriodForUnitMock,
     } as unknown as ReportLifecycleService;
 
-    service = new ReportInstancesService(prisma, unitAccessService, notificationsService, reportLifecycleService);
+    service = new ReportInstancesService(
+      prisma,
+      unitAccessService,
+      notificationsService,
+      reportLifecycleService,
+      auditContextService,
+    );
   });
 
   describe('findAllForUser', () => {

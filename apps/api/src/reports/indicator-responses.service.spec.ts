@@ -1,13 +1,14 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { GoalOperator, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndicatorResponsesService } from './indicator-responses.service';
 
 describe('IndicatorResponsesService', () => {
   let service: IndicatorResponsesService;
   let findUniqueMock: jest.Mock;
-  let runWithAuditActorMock: jest.Mock;
+  let runWithAuditContextMock: jest.Mock;
   let txUpdateMock: jest.Mock;
 
   const elaborador: AuthenticatedUser = {
@@ -33,14 +34,16 @@ describe('IndicatorResponsesService', () => {
   beforeEach(() => {
     findUniqueMock = jest.fn();
     txUpdateMock = jest.fn().mockResolvedValue({ id: 'response-1' });
-    runWithAuditActorMock = jest.fn((_userId: string, fn: (tx: unknown) => unknown) =>
+    runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
       fn({ indicatorResponse: { update: txUpdateMock } }),
     );
     const prisma = {
       indicatorResponse: { findUnique: findUniqueMock },
-      runWithAuditActor: runWithAuditActorMock,
     } as unknown as PrismaService;
-    service = new IndicatorResponsesService(prisma);
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new IndicatorResponsesService(prisma, auditContextService);
   });
 
   test('throws NotFoundException when the indicator response does not exist', async () => {

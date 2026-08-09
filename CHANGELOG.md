@@ -31,6 +31,24 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - Sete parâmetros operacionais novos em `SystemSetting` (retenção de evidência, feriados
   facultativos, limites de amplitude de consulta de auditoria, regra de outlier, guarda pericial).
 
+- `AuditContextService` (`AsyncLocalStorage`), substituindo `PrismaService.runWithAuditActor`:
+  toda escrita auditada agora carrega contexto de requisição completo (usuário, IP, User-Agent,
+  origem, request ID, snapshots de nome/cargo/perfil/unidade), não apenas o `userId`.
+- `AuditContextInterceptor`, registrado globalmente, popula o contexto de auditoria a partir da
+  requisição HTTP autenticada antes de qualquer handler rodar.
+- `SystemActor` (`system-actor.ts`): contexto de auditoria para escrita sem requisição HTTP (cron
+  do motor de SLA, scripts de seed), sempre com `actorNameSnapshot` identificável e nunca autoria
+  nula — mesmo com `userId` ausente.
+- `AccessLogService` + `AuditModule`: registro de leitura sensível (consulta de auditoria,
+  exportação, download de evidência, verificação de selo, tentativas de login), com filtros, escopo
+  e volume gravados na íntegra.
+- `absence.util.ts`: as cinco representações físicas de ausência de indicador (valor apurado, zero
+  medido, N/A fora do nível, N/A indicador inativo, não preenchido) como classificação pura e
+  testada — fundação para a matriz esparsa da auditoria e as views analíticas.
+- `apps/api/src/prisma/audit-actor.spec.ts` e `audit-trigger-coverage.spec.ts`: testes de
+  integração provando que escrita sem contexto é rejeitada pelo banco e que todas as tabelas
+  auditáveis têm o gatilho de auditoria.
+
 ### Changed
 
 - `AuditLog` movido do schema `public` para `audit`, com contexto de requisição
@@ -38,6 +56,15 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   `unidade` à época do evento) — FR-069.
 - O gatilho de auditoria (`fn_write_audit_log`) passa a **rejeitar** qualquer escrita sem
   `app.origin` de sessão definida, em vez de gravar silenciosamente com autor nulo.
+- Cobertura do gatilho de auditoria estendida de 2 para 10 tabelas: `users`, `units`,
+  `user_unit_access`, `form_templates`, `form_topics`, `form_indicators`, `system_settings` e
+  `validation_records`, além de `indicator_responses`/`evidence_files` já cobertas.
+- Os 5 pontos de escrita que usavam `PrismaService.runWithAuditActor` (`validation.service.ts`,
+  `indicator-responses.service.ts`, `report-instances.service.ts`, `evidence.service.ts`) migrados
+  para `AuditContextService.runWithAuditContext`; `runWithAuditActor` removido (zero chamadores).
+- `ReportLifecycleService.openPeriodForUnit` (abertura automática/manual de período) e o cron do
+  motor de SLA agora escrevem sob contexto de auditoria — sem isso a nova cobertura do gatilho
+  rejeitaria a criação de `IndicatorResponse` na abertura de período.
 
 ### Fixed
 
@@ -45,6 +72,9 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   preenchidos em todos os pontos de escrita (`EvidenceService`, `ValidationService`,
   `FormIndicatorsService`, seeds) — sem esse ajuste o build e os seeds quebravam silenciosamente em
   runtime, já que `prisma/` está fora do escopo de type-check do Nest.
+- Dois `IndicatorResponse.upsert` em `seed-demo.ts` sem `updatedAt` (obrigatório desde a remoção de
+  `@updatedAt` do schema) — bug latente que só o type-check real do `ts-node` revelou, não o build
+  do Nest.
 
 ## Fases do Spec Kit (`specs/001-plataforma-formops-base/`)
 
@@ -54,4 +84,7 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   custódia de chave, provisionamento de buckets.
 - **Fase 2 — Foundational** (T010-T040): em andamento. Correções de modelo e entidades novas
   aplicadas (T010-T019); migrações SQL aplicadas e verificadas contra Postgres real (T020-T025);
-  contexto/trilha de auditoria, sessão em cookie e revogação de DML pendentes.
+  contexto e trilha de auditoria completos (T026-T030a); sessão em cookie e revogação de DML
+  pendentes (T031-T037).
+- **Fase 12 — Convergência** (T166-T171): T166 e T167 concluídas junto com a Fase 2 (mesma correção,
+  dois ângulos, conforme recomendado). T168-T171 pendentes.

@@ -2,6 +2,7 @@ import { ReportStatus, Unit } from '@prisma/client';
 import * as businessDaysUtil from './business-days.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { LifecycleCronService } from './lifecycle-cron.service';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
@@ -24,8 +25,9 @@ describe('LifecycleCronService', () => {
     } as unknown as PrismaService;
     const reportLifecycleService = { openPeriodForUnit: openPeriodForUnitMock } as unknown as ReportLifecycleService;
     const notificationsService = { notifySlaOverdue: notifySlaOverdueMock } as unknown as NotificationsService;
+    const auditContextService = new AuditContextService({} as unknown as PrismaService);
 
-    service = new LifecycleCronService(prisma, reportLifecycleService, notificationsService);
+    service = new LifecycleCronService(prisma, reportLifecycleService, notificationsService, auditContextService);
   });
 
   afterEach(() => {

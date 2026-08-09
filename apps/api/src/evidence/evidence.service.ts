@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { assertCanEditReportData } from '../common/report-edit-access.util';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../storage/s3.service';
@@ -11,6 +12,7 @@ export class EvidenceService {
     private readonly prisma: PrismaService,
     private readonly s3Service: S3Service,
     private readonly unitAccessService: UnitAccessService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   async uploadForIndicatorResponse(
@@ -29,7 +31,7 @@ export class EvidenceService {
 
     const fileKey = await this.s3Service.upload(file.buffer, file.originalname, file.mimetype);
 
-    return this.prisma.runWithAuditActor(user.id, (tx) =>
+    return this.auditContextService.runWithAuditContext((tx) =>
       tx.evidenceFile.create({
         data: {
           indicatorResponseId,
@@ -38,6 +40,10 @@ export class EvidenceService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: user.id,
+          // bucket reflete o destino real do upload acima. Ainda o bucket
+          // legado unico — o roteamento para quarentena e o veredito de
+          // antivirus sao T049/T050, pendentes.
+          bucket: this.s3Service.getBucketName(),
         },
       }),
     );

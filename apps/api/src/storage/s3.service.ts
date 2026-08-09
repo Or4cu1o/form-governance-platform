@@ -40,6 +40,10 @@ export class S3Service implements OnModuleInit {
     }
   }
 
+  getBucketName(): string {
+    return this.bucket;
+  }
+
   async upload(buffer: Buffer, originalName: string, mimeType: string): Promise<string> {
     const key = `${randomUUID()}-${originalName}`;
     await this.client.send(

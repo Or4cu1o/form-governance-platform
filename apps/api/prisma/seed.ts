@@ -1,7 +1,11 @@
-import { PrismaClient, RoleName, UnitLevel } from '@prisma/client';
+import { Prisma, PrismaClient, RoleName, UnitLevel } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { AuditContextService } from '../src/common/services/audit-context.service';
+import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../src/common/services/system-actor';
+import type { PrismaService } from '../src/prisma/prisma.service';
 
 const prisma = new PrismaClient();
+const auditContextService = new AuditContextService(prisma as unknown as PrismaService);
 
 const SALT_ROUNDS = 10;
 const DEV_TEST_PASSWORD = 'FormOpsTeste@2026';
@@ -14,15 +18,15 @@ const DEV_ROLE_USERS: Array<{ matricula: string; nome: string; sobrenome: string
   { matricula: '10005', nome: 'Teste', sobrenome: 'Administrador', role: RoleName.ADMINISTRADOR },
 ];
 
-async function ensureMatrizUnit() {
-  return prisma.unit.upsert({
+async function ensureMatrizUnit(db: Prisma.TransactionClient) {
+  return db.unit.upsert({
     where: { sigla: 'MATRIZ' },
     update: {},
     create: { sigla: 'MATRIZ', nome: 'Matriz', level: UnitLevel.A },
   });
 }
 
-async function ensureInitialAdmin(matrizUnitId: string) {
+async function ensureInitialAdmin(db: Prisma.TransactionClient, matrizUnitId: string) {
   const matricula = process.env.INITIAL_ADMIN_MATRICULA;
   const email = process.env.INITIAL_ADMIN_EMAIL;
   const password = process.env.INITIAL_ADMIN_PASSWORD;
@@ -35,7 +39,7 @@ async function ensureInitialAdmin(matrizUnitId: string) {
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  await prisma.user.upsert({
+  await db.user.upsert({
     where: { matricula },
     update: { email, passwordHash, role: RoleName.ADMINISTRADOR, primaryUnitId: matrizUnitId, isActive: true },
     create: {
@@ -52,12 +56,12 @@ async function ensureInitialAdmin(matrizUnitId: string) {
   console.log(`[seed] Admin inicial garantido: matricula=${matricula} email=${email}`);
 }
 
-async function ensureDevRoleUsers(matrizUnitId: string) {
+async function ensureDevRoleUsers(db: Prisma.TransactionClient, matrizUnitId: string) {
   const passwordHash = await bcrypt.hash(DEV_TEST_PASSWORD, SALT_ROUNDS);
 
   for (const roleUser of DEV_ROLE_USERS) {
     const email = `${roleUser.role.toLowerCase()}@matriz.dev`;
-    await prisma.user.upsert({
+    await db.user.upsert({
       where: { matricula: roleUser.matricula },
       update: {
         email,
@@ -83,12 +87,19 @@ async function ensureDevRoleUsers(matrizUnitId: string) {
 }
 
 async function main() {
-  const matriz = await ensureMatrizUnit();
-  await ensureInitialAdmin(matriz.id);
+  // ensureMatrizUnit/ensureInitialAdmin/ensureDevRoleUsers escrevem em
+  // users/units — auditadas a partir de T167. Sem contexto ativo o gatilho
+  // rejeitaria a escrita (T028b).
+  await runAsSystemActor(auditContextService, 'Seed core — usuarios e unidade inicial', AUDIT_ORIGIN_SEED, () =>
+    auditContextService.runWithAuditContext(async (tx) => {
+      const matriz = await ensureMatrizUnit(tx);
+      await ensureInitialAdmin(tx, matriz.id);
 
-  if (process.env.NODE_ENV !== 'production') {
-    await ensureDevRoleUsers(matriz.id);
-  }
+      if (process.env.NODE_ENV !== 'production') {
+        await ensureDevRoleUsers(tx, matriz.id);
+      }
+    }),
+  );
 }
 
 main()

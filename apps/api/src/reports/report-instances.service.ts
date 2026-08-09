@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, Prisma, ReportStatus, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +17,7 @@ export class ReportInstancesService {
     private readonly unitAccessService: UnitAccessService,
     private readonly notificationsService: NotificationsService,
     private readonly reportLifecycleService: ReportLifecycleService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   async startCurrentPeriodForElaborador(user: AuthenticatedUser) {
@@ -198,7 +200,7 @@ export class ReportInstancesService {
       );
     }
 
-    const updated = await this.prisma.runWithAuditActor(user.id, async (tx) => {
+    const updated = await this.auditContextService.runWithAuditContext(async (tx) => {
       await tx.indicatorResponse.updateMany({
         where: { reportInstanceId: id },
         data: { validationStatus: IndicatorValidationStatus.PENDENTE_VALIDACAO },

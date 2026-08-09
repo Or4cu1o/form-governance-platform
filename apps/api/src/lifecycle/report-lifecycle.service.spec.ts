@@ -1,15 +1,20 @@
 import { GoalOperator, UnitLevel } from '@prisma/client';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditContextService } from '../common/services/audit-context.service';
+import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../common/services/system-actor';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
 // Teste de integracao contra um Postgres real (nao mockado) — segue o
 // padrao ja usado no restante do projeto de validar contra o banco de
 // dev em vez de dublês, para pegar bugs reais de constraint/transacao.
+// openPeriodForUnit agora exige um AuditContext ativo (T028b): todo o corpo
+// do teste roda dentro de runAsSystemActor.
 describe('ReportLifecycleService (integration)', () => {
   const prisma = new PrismaService();
   const platformSettingsService = new PlatformSettingsService(prisma);
-  const service = new ReportLifecycleService(prisma, platformSettingsService);
+  const auditContextService = new AuditContextService(prisma);
+  const service = new ReportLifecycleService(prisma, platformSettingsService, auditContextService);
 
   let unitId: string;
   let formTemplateId: string;
@@ -31,6 +36,13 @@ describe('ReportLifecycleService (integration)', () => {
       data: { formTemplateId, title: 'Infra' },
     });
 
+    const residentCatalogEntry = await prisma.indicatorCatalog.create({
+      data: { code: `LIFECYCLE_RESIDENT_${Date.now()}`, name: 'Servidores Fisicos', measurementUnit: 'UNIDADE' },
+    });
+    const volatileCatalogEntry = await prisma.indicatorCatalog.create({
+      data: { code: `LIFECYCLE_VOLATILE_${Date.now()}`, name: 'Uptime', measurementUnit: 'PERCENTUAL' },
+    });
+
     const residentIndicator = await prisma.formIndicator.create({
       data: {
         formTopicId: topic.id,
@@ -41,6 +53,7 @@ describe('ReportLifecycleService (integration)', () => {
         goalOperator: GoalOperator.GTE,
         goalValue: 0,
         isResidentState: true,
+        catalogEntryId: residentCatalogEntry.id,
       },
     });
     residentIndicatorId = residentIndicator.id;
@@ -55,6 +68,7 @@ describe('ReportLifecycleService (integration)', () => {
         goalOperator: GoalOperator.GTE,
         goalValue: 95,
         isResidentState: false,
+        catalogEntryId: volatileCatalogEntry.id,
       },
     });
     volatileIndicatorId = volatileIndicator.id;
@@ -78,9 +92,15 @@ describe('ReportLifecycleService (integration)', () => {
     await prisma.$disconnect();
   });
 
+  function openPeriodAsTestActor(unit: Parameters<typeof service.openPeriodForUnit>[0], referenceMonth: Date) {
+    return runAsSystemActor(auditContextService, 'Teste de integracao — abertura de periodo', AUDIT_ORIGIN_SEED, () =>
+      service.openPeriodForUnit(unit, referenceMonth),
+    );
+  }
+
   test('opens a period with correct DU due dates and empty snapshots for a unit with no history', async () => {
     const unit = await prisma.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const report = await service.openPeriodForUnit(unit, july2026);
+    const report = await openPeriodAsTestActor(unit, july2026);
 
     expect(report).not.toBeNull();
     expect(report!.status).toBe('PENDENTE');
@@ -95,8 +115,8 @@ describe('ReportLifecycleService (integration)', () => {
 
   test('is idempotent: calling it again for the same unit/month returns the existing instance', async () => {
     const unit = await prisma.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const first = await service.openPeriodForUnit(unit, july2026);
-    const second = await service.openPeriodForUnit(unit, july2026);
+    const first = await openPeriodAsTestActor(unit, july2026);
+    const second = await openPeriodAsTestActor(unit, july2026);
 
     expect(second!.id).toBe(first!.id);
     const count = await prisma.reportInstance.count({ where: { unitId, referenceMonth: july2026 } });
@@ -107,17 +127,25 @@ describe('ReportLifecycleService (integration)', () => {
     const julyReport = await prisma.reportInstance.findUniqueOrThrow({
       where: { unitId_referenceMonth: { unitId, referenceMonth: july2026 } },
     });
-    await prisma.indicatorResponse.updateMany({
-      where: { reportInstanceId: julyReport.id, formIndicatorId: residentIndicatorId },
-      data: { variableValues: { QTD: 42 } },
-    });
-    await prisma.indicatorResponse.updateMany({
-      where: { reportInstanceId: julyReport.id, formIndicatorId: volatileIndicatorId },
-      data: { variableValues: { A: 10, B: 1 } },
-    });
+    await runAsSystemActor(auditContextService, 'Teste de integracao — preparacao de fixture', AUDIT_ORIGIN_SEED, () =>
+      auditContextService.runWithAuditContext((tx) =>
+        tx.indicatorResponse.updateMany({
+          where: { reportInstanceId: julyReport.id, formIndicatorId: residentIndicatorId },
+          data: { variableValues: { QTD: 42 } },
+        }),
+      ),
+    );
+    await runAsSystemActor(auditContextService, 'Teste de integracao — preparacao de fixture', AUDIT_ORIGIN_SEED, () =>
+      auditContextService.runWithAuditContext((tx) =>
+        tx.indicatorResponse.updateMany({
+          where: { reportInstanceId: julyReport.id, formIndicatorId: volatileIndicatorId },
+          data: { variableValues: { A: 10, B: 1 } },
+        }),
+      ),
+    );
 
     const unit = await prisma.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const augustReport = await service.openPeriodForUnit(unit, august2026);
+    const augustReport = await openPeriodAsTestActor(unit, august2026);
 
     const residentResponse = await prisma.indicatorResponse.findFirstOrThrow({
       where: { reportInstanceId: augustReport!.id, formIndicatorId: residentIndicatorId },

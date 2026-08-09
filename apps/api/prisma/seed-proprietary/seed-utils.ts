@@ -1,4 +1,4 @@
-import { GoalOperator, PrismaClient } from '@prisma/client';
+import { GoalOperator, Prisma } from '@prisma/client';
 
 // Helpers de seed idempotente para os formularios proprietarios N1/N3
 // (Secao 4 do PROMPT.md — "Injecao de Templates Proprietarios"). FormTopic e
@@ -51,7 +51,7 @@ export interface FormTemplateSeed {
   topics: TopicSeed[];
 }
 
-export async function seedFormTemplate(prisma: PrismaClient, template: FormTemplateSeed): Promise<void> {
+export async function seedFormTemplate(prisma: Prisma.TransactionClient, template: FormTemplateSeed): Promise<void> {
   const formTemplate = await prisma.formTemplate.upsert({
     where: { name: template.name },
     update: { description: template.description },
@@ -78,7 +78,7 @@ export async function seedFormTemplate(prisma: PrismaClient, template: FormTempl
   console.log(`[seed-proprietary] Template "${template.name}" garantido (${template.topics.length} topico(s)).`);
 }
 
-async function upsertTopic(prisma: PrismaClient, formTemplateId: string, title: string, order: number) {
+async function upsertTopic(prisma: Prisma.TransactionClient, formTemplateId: string, title: string, order: number) {
   const existing = await prisma.formTopic.findFirst({ where: { formTemplateId, title } });
   if (existing) {
     return prisma.formTopic.update({ where: { id: existing.id }, data: { order, isActive: true } });
@@ -86,13 +86,39 @@ async function upsertTopic(prisma: PrismaClient, formTemplateId: string, title: 
   return prisma.formTopic.create({ data: { formTemplateId, title, order } });
 }
 
+// Deriva um code estavel a partir do titulo, para que reexecucoes do seed
+// reaproveitem a mesma entrada de catalogo em vez de duplicar (A6, FR-062).
+function catalogCodeFromTitle(title: string): string {
+  const slug = title
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .toUpperCase()
+    .slice(0, 40);
+  return `N1N3_${slug}`;
+}
+
+async function upsertCatalogEntry(prisma: Prisma.TransactionClient, indicator: IndicatorSeed) {
+  const code = catalogCodeFromTitle(indicator.title);
+  const existing = await prisma.indicatorCatalog.findUnique({ where: { code } });
+  if (existing) {
+    return existing;
+  }
+  // measurementUnit provisorio — nao ha unidade de medida declarada nos
+  // formularios proprietarios hoje; revisar via tela de catalogo (US4).
+  return prisma.indicatorCatalog.create({
+    data: { code, name: indicator.title, measurementUnit: 'A_DEFINIR', description: indicator.objective },
+  });
+}
+
 async function upsertIndicator(
-  prisma: PrismaClient,
+  prisma: Prisma.TransactionClient,
   formTopicId: string,
   indicator: IndicatorSeed,
   scoreWeight: number,
 ) {
   const existing = await prisma.formIndicator.findFirst({ where: { formTopicId, title: indicator.title } });
+  const catalogEntry = await upsertCatalogEntry(prisma, indicator);
   const data = {
     objective: indicator.objective,
     variableKeys: indicator.variableKeys,
@@ -103,6 +129,7 @@ async function upsertIndicator(
     order: indicator.order,
     isActive: true,
     scoreWeight,
+    catalogEntryId: catalogEntry.id,
   };
 
   if (existing) {

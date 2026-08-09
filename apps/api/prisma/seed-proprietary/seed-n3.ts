@@ -1,4 +1,7 @@
 import { GoalOperator, PrismaClient } from '@prisma/client';
+import { AuditContextService } from '../../src/common/services/audit-context.service';
+import { AUDIT_ORIGIN_SEED, runAsSystemActor } from '../../src/common/services/system-actor';
+import type { PrismaService } from '../../src/prisma/prisma.service';
 import { FormTemplateSeed, seedFormTemplate } from './seed-utils';
 
 // Definicao estrutural do formulario N3, extraida por engenharia reversa de
@@ -205,8 +208,11 @@ const N3_TEMPLATE: FormTemplateSeed = {
 };
 
 const prisma = new PrismaClient();
+const auditContextService = new AuditContextService(prisma as unknown as PrismaService);
 
-seedFormTemplate(prisma, N3_TEMPLATE)
+runAsSystemActor(auditContextService, 'Seed proprietario — formulario N3', AUDIT_ORIGIN_SEED, () =>
+  auditContextService.runWithAuditContext((tx) => seedFormTemplate(tx, N3_TEMPLATE)),
+)
   .catch((error) => {
     console.error('[seed-proprietary] Falha ao executar seed N3:', error);
     process.exitCode = 1;

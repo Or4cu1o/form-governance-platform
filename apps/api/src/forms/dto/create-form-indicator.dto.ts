@@ -39,6 +39,12 @@ export class CreateFormIndicatorDto {
   @IsNumber()
   goalValue!: number;
 
+  // Vinculo obrigatorio ao catalogo canonico (A6, FR-062) — cadastro sem
+  // codigo canonico e recusado.
+  @IsString()
+  @IsNotEmpty()
+  catalogEntryId!: string;
+
   @IsBoolean()
   @IsOptional()
   isResidentState?: boolean;

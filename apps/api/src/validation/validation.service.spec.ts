@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { IndicatorValidationStatus, ReportStatus, RoleName, ValidationVerdict } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -55,10 +56,12 @@ describe('ValidationService', () => {
       indicatorResponse: { findUnique: findUniqueIndicatorResponseMock },
       reportInstance: { findUnique: findUniqueReportInstanceMock },
       validationRecord: { findUnique: findUniqueValidationRecordMock },
-      runWithAuditActor: jest.fn((_userId: string, fn: (tx: unknown) => unknown) => fn(tx)),
     } as unknown as PrismaService;
 
-    const s3Service = { upload: uploadMock } as unknown as S3Service;
+    const s3Service = {
+      upload: uploadMock,
+      getBucketName: jest.fn().mockReturnValue('formops-evidencias'),
+    } as unknown as S3Service;
     const notificationsService = {
       notifyReportReproved: notifyReprovedMock,
       notifyReportConcluded: notifyConcludedMock,
@@ -72,8 +75,11 @@ describe('ValidationService', () => {
         slaDeflatorScore: 2,
       }),
     } as unknown as PlatformSettingsService;
+    const auditContextService = {
+      runWithAuditContext: jest.fn((fn: (tx: unknown) => unknown) => fn(tx)),
+    } as unknown as AuditContextService;
 
-    service = new ValidationService(prisma, s3Service, notificationsService, platformSettingsService);
+    service = new ValidationService(prisma, s3Service, notificationsService, platformSettingsService, auditContextService);
   });
 
   describe('validateIndicator', () => {
@@ -174,6 +180,7 @@ describe('ValidationService', () => {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           uploadedByUserId: user.id,
+          bucket: 'formops-evidencias',
         },
       });
     });
@@ -183,13 +190,13 @@ describe('ValidationService', () => {
     test('throws NotFoundException when the report does not exist', async () => {
       findUniqueReportInstanceMock.mockResolvedValue(null);
 
-      await expect(service.finalizeReport('missing-report', user)).rejects.toThrow(NotFoundException);
+      await expect(service.finalizeReport('missing-report')).rejects.toThrow(NotFoundException);
     });
 
     test('throws BadRequestException when the report is not in PENDENTE_APROVACAO', async () => {
       findUniqueReportInstanceMock.mockResolvedValue({ status: ReportStatus.EM_REVISAO, indicatorResponses: [] });
 
-      await expect(service.finalizeReport('report-1', user)).rejects.toThrow(BadRequestException);
+      await expect(service.finalizeReport('report-1')).rejects.toThrow(BadRequestException);
     });
 
     test('throws BadRequestException when indicators are still pending validation', async () => {
@@ -198,7 +205,7 @@ describe('ValidationService', () => {
         indicatorResponses: [{ validationStatus: IndicatorValidationStatus.PENDENTE_VALIDACAO }],
       });
 
-      await expect(service.finalizeReport('report-1', user)).rejects.toThrow(BadRequestException);
+      await expect(service.finalizeReport('report-1')).rejects.toThrow(BadRequestException);
     });
 
     test('concludes the report and sums the score only for indicators that are both compliant and approved', async () => {
@@ -219,7 +226,7 @@ describe('ValidationService', () => {
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1', user);
+      await service.finalizeReport('report-1');
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith({
         where: { id: 'report-1' },
@@ -252,7 +259,7 @@ describe('ValidationService', () => {
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1', user);
+      await service.finalizeReport('report-1');
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ indicatorScore: 6 }) }),
@@ -275,7 +282,7 @@ describe('ValidationService', () => {
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1', user);
+      await service.finalizeReport('report-1');
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith({
         where: { id: 'report-1' },
@@ -306,7 +313,7 @@ describe('ValidationService', () => {
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1', user);
+      await service.finalizeReport('report-1');
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ totalScore: 0, slaDeflatorApplied: 4 }) }),
@@ -322,7 +329,7 @@ describe('ValidationService', () => {
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.EM_REVISAO });
 
-      await service.finalizeReport('report-1', user);
+      await service.finalizeReport('report-1');
 
       expect(txUpdateManyIndicatorResponseMock).toHaveBeenCalledWith({
         where: { reportInstanceId: 'report-1' },

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ReportStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AUDIT_ORIGIN_CRON, runAsSystemActor } from '../common/services/system-actor';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { getBusinessDayOrdinalInMonth, getMandatoryNationalHolidays } from './business-days.util';
 import { ReportLifecycleService } from './report-lifecycle.service';
@@ -22,25 +24,37 @@ export class LifecycleCronService {
     private readonly prisma: PrismaService,
     private readonly reportLifecycleService: ReportLifecycleService,
     private readonly notificationsService: NotificationsService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   @Cron('0 6 * * 1-5')
   async handleDailyBusinessDayCheck(): Promise<void> {
-    const today = new Date();
-    const holidays = getMandatoryNationalHolidays(today.getUTCFullYear());
-    const ordinal = getBusinessDayOrdinalInMonth(today, holidays);
+    // Sem requisicao HTTP nao ha AuditContextInterceptor — o cron precisa do
+    // seu proprio contexto de ator de sistema para que openMonthlyPeriods
+    // (que cria IndicatorResponse via ReportLifecycleService) nao seja
+    // rejeitado pelo gatilho de auditoria (T028b).
+    return runAsSystemActor(
+      this.auditContextService,
+      'Motor de SLA — verificacao diaria de dia util',
+      AUDIT_ORIGIN_CRON,
+      async () => {
+        const today = new Date();
+        const holidays = getMandatoryNationalHolidays(today.getUTCFullYear());
+        const ordinal = getBusinessDayOrdinalInMonth(today, holidays);
 
-    if (ordinal === null) {
-      this.logger.debug('Hoje nao e dia util (feriado nacional) — nenhuma acao do motor de SLA.');
-      return;
-    }
+        if (ordinal === null) {
+          this.logger.debug('Hoje nao e dia util (feriado nacional) — nenhuma acao do motor de SLA.');
+          return;
+        }
 
-    if (ordinal === 1) {
-      await this.openMonthlyPeriods(today);
-    }
-    if (ordinal === 5) {
-      await this.checkSlaOverdue(today);
-    }
+        if (ordinal === 1) {
+          await this.openMonthlyPeriods(today);
+        }
+        if (ordinal === 5) {
+          await this.checkSlaOverdue(today);
+        }
+      },
+    );
   }
 
   async openMonthlyPeriods(today: Date): Promise<void> {
