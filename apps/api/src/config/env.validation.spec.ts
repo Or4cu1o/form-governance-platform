@@ -14,6 +14,7 @@ describe('validateEnv', () => {
     S3_BUCKET_IMMUTABLE: 'formops-imutavel',
     CLAMAV_HOST: 'clamav',
     CLAMAV_PORT: '3310',
+    CORS_ORIGIN: 'http://localhost:7443',
   };
 
   test('returns the config unchanged when every required variable is present', () => {
@@ -41,6 +42,7 @@ describe('validateEnv', () => {
         'S3_BUCKET_IMMUTABLE',
         'CLAMAV_HOST',
         'CLAMAV_PORT',
+        'CORS_ORIGIN',
       ].join(', '),
     );
   });
@@ -57,6 +59,7 @@ describe('validateEnv', () => {
     'S3_BUCKET_IMMUTABLE',
     'CLAMAV_HOST',
     'CLAMAV_PORT',
+    'CORS_ORIGIN',
   ] as const)('throws when %s is missing', (key) => {
     const withoutKey: Record<string, string> = { ...validConfig };
     delete withoutKey[key];

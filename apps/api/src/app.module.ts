@@ -7,6 +7,7 @@ import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
+import { CsrfGuard } from './common/guards/csrf.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor';
@@ -48,6 +49,9 @@ import { ValidationModule } from './validation/validation.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Sessao virou cookie enviado automaticamente pelo navegador (F16.2), o
+    // que reabre CSRF — roda apos os guards de autenticacao/autorizacao.
+    { provide: APP_GUARD, useClass: CsrfGuard },
     // Roda apos os guards (req.user ja populado quando autenticado) e antes
     // de qualquer handler — T028/T166.
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },

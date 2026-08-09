@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiDownloadBlob, apiGet, apiSend, apiUpload, buildQueryString, UNAUTHORIZED_EVENT } from './api-client';
 import { ApiError } from './api-error';
-import { clearStoredToken, setStoredToken } from './token-storage';
+import { CSRF_HEADER_NAME } from './csrf';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -9,6 +9,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+}
+
+function setCsrfCookie(value: string): void {
+  document.cookie = `formops_csrf_token=${value}`;
+}
+
+function clearCsrfCookie(): void {
+  document.cookie = 'formops_csrf_token=; Max-Age=0';
 }
 
 describe('buildQueryString', () => {
@@ -28,34 +36,44 @@ describe('buildQueryString', () => {
 
 describe('api-client requests', () => {
   beforeEach(() => {
-    clearStoredToken();
+    clearCsrfCookie();
     vi.stubGlobal('fetch', vi.fn());
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    clearStoredToken();
+    clearCsrfCookie();
   });
 
-  it('apiGet attaches the bearer token when one is stored', async () => {
-    setStoredToken('token-123');
+  it('apiGet sends the request with credentials so the session cookie is attached', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ ok: true }));
 
     await apiGet('/reports');
 
     const [, requestInit] = vi.mocked(fetch).mock.calls[0];
-    const headers = requestInit?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer token-123');
+    expect(requestInit?.credentials).toBe('include');
   });
 
-  it('apiGet omits the Authorization header when no token is stored', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ ok: true }));
+  it('apiSend attaches the CSRF header when the cookie is present', async () => {
+    setCsrfCookie('csrf-abc');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ id: '1' }));
 
-    await apiGet('/reports');
+    await apiSend('POST', '/reports', { referenceMonth: '2026-03-01' });
 
     const [, requestInit] = vi.mocked(fetch).mock.calls[0];
     const headers = requestInit?.headers as Record<string, string>;
-    expect(headers.Authorization).toBeUndefined();
+    expect(headers[CSRF_HEADER_NAME]).toBe('csrf-abc');
+    expect(requestInit?.credentials).toBe('include');
+  });
+
+  it('apiSend omits the CSRF header when no cookie is present', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ id: '1' }));
+
+    await apiSend('POST', '/reports', { referenceMonth: '2026-03-01' });
+
+    const [, requestInit] = vi.mocked(fetch).mock.calls[0];
+    const headers = requestInit?.headers as Record<string, string>;
+    expect(headers[CSRF_HEADER_NAME]).toBeUndefined();
   });
 
   it('apiSend sends a JSON body with the given method', async () => {
@@ -95,8 +113,7 @@ describe('api-client requests', () => {
     await expect(apiGet('/reports')).rejects.toThrow('Falha na requisicao (500)');
   });
 
-  it('clears the stored token and dispatches UNAUTHORIZED_EVENT on a 401', async () => {
-    setStoredToken('token-123');
+  it('dispatches UNAUTHORIZED_EVENT on a 401', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ message: 'Unauthorized' }, { status: 401 }));
 
     const listener = vi.fn();

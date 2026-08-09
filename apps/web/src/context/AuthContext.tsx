@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fetchCurrentUser, login as loginRequest } from '../api/auth';
+import { fetchCurrentUser, login as loginRequest, logout as logoutRequest } from '../api/auth';
 import { UNAUTHORIZED_EVENT } from '../lib/api-client';
-import { clearStoredToken, getStoredToken, setStoredToken } from '../lib/token-storage';
 import type { AuthenticatedUser } from '../types/api';
 
 interface AuthContextValue {
@@ -20,30 +19,34 @@ type Props = {
 
 export function AuthProvider({ children }: Props) {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
-  const [isLoading, setIsLoading] = useState(() => getStoredToken() !== null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Apenas limpa o estado local — usado tambem como handler de
+  // UNAUTHORIZED_EVENT, entao nao pode chamar a API (um 401 na propria
+  // chamada de logout dispararia o evento de novo, um loop).
+  const clearSession = useCallback(() => setUser(null), []);
 
   const logout = useCallback(() => {
-    clearStoredToken();
-    setUser(null);
-  }, []);
+    clearSession();
+    // A sessao vive em cookie HttpOnly (F16.2): o cliente ja limpou seu
+    // proprio estado, mas so o servidor consegue invalidar o cookie.
+    void logoutRequest().catch(() => undefined);
+  }, [clearSession]);
 
   useEffect(() => {
-    if (!getStoredToken()) return;
-
     fetchCurrentUser()
       .then(setUser)
-      .catch(() => clearStoredToken())
+      .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
-    window.addEventListener(UNAUTHORIZED_EVENT, logout);
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, logout);
-  }, [logout]);
+    window.addEventListener(UNAUTHORIZED_EVENT, clearSession);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, clearSession);
+  }, [clearSession]);
 
   const login = useCallback(async (identifier: string, password: string) => {
     const response = await loginRequest(identifier, password);
-    setStoredToken(response.accessToken);
     setUser(response.user);
   }, []);
 

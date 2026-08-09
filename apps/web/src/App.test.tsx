@@ -1,10 +1,16 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
 describe('App', () => {
+  beforeEach(() => {
+    // AuthProvider sempre pergunta GET /auth/me no mount (cookie HttpOnly nao
+    // e legivel pelo JS) — sem esse stub o teste faria uma chamada de rede real.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('sem sessao')));
+  });
+
   afterEach(() => {
-    sessionStorage.clear();
+    vi.unstubAllGlobals();
     window.history.pushState({}, '', '/');
   });
 

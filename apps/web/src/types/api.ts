@@ -22,7 +22,6 @@ export interface AuthenticatedUser {
 }
 
 export interface LoginResponse {
-  accessToken: string;
   user: AuthenticatedUser;
 }
 

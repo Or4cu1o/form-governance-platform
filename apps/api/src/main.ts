@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,6 +27,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { httpsOptions });
   app.use(helmet());
+  app.use(cookieParser());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -33,18 +35,16 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  // CORS_ORIGIN restringe a origem em producao (Fase 12 — achado MEDIUM:
-  // enableCors() sem opcoes libera Access-Control-Allow-Origin: *). Sem a
-  // variavel definida ou em branco, cai em modo aberto — mantem o comportamento de dev
-  // existente ate o frontend real ter um dominio fixo configurado.
-  const corsOrigin = process.env.CORS_ORIGIN;
-  if (corsOrigin && corsOrigin.trim() !== '') {
-    app.enableCors({
-      origin: corsOrigin.split(',').map((o) => o.trim()),
-    });
-  } else {
-    app.enableCors();
-  }
+  // CORS_ORIGIN restringe a origem em todo ambiente (T171 — o ramo aberto
+  // anterior, enableCors() sem opcoes, e incompativel com sessao em cookie:
+  // requisicao com credencial nao pode carregar Access-Control-Allow-Origin
+  // curinga. validateEnv (env.validation.ts) ja falha o boot se a variavel
+  // estiver ausente, entao aqui ela sempre existe.
+  const corsOrigin = process.env.CORS_ORIGIN as string;
+  app.enableCors({
+    origin: corsOrigin.split(',').map((o) => o.trim()),
+    credentials: true,
+  });
   const port = process.env.API_PORT ?? 3000;
   await app.listen(port);
 }

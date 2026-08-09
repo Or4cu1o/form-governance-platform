@@ -17,6 +17,10 @@ const REQUIRED_ENV_VARS = [
   // Endpoint do daemon ClamAV (T004/T050).
   'CLAMAV_HOST',
   'CLAMAV_PORT',
+  // Origem(ns) explicita(s) da SPA (T171): sessao agora vive em cookie
+  // (T032), e requisicao com credencial e incompativel com CORS curinga —
+  // sem esta variavel nao ha modo aberto de fallback possivel.
+  'CORS_ORIGIN',
 ] as const;
 
 // Falha rapido na inicializacao se algum segredo/config obrigatorio nao

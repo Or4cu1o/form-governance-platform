@@ -48,6 +48,19 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - `apps/api/src/prisma/audit-actor.spec.ts` e `audit-trigger-coverage.spec.ts`: testes de
   integração provando que escrita sem contexto é rejeitada pelo banco e que todas as tabelas
   auditáveis têm o gatilho de auditoria.
+- Sessão em cookie `HttpOnly` (F16.2): o JWT deixa de residir em armazenamento acessível a script.
+  `apps/api/src/auth/session-cookies.constants.ts` nomeia os dois cookies (`formops_access_token`,
+  `formops_csrf_token`); `JwtStrategy` lê o token do cookie em vez do header `Authorization`.
+- `CsrfGuard` (`apps/api/src/common/guards/`), global: esquema de submissão dupla — toda rota de
+  escrita autenticada exige que o header `x-csrf-token` ecoe o cookie CSRF (legível por JS,
+  deliberadamente sem `HttpOnly`). Rota `@Public()` e método seguro (GET/HEAD/OPTIONS) são isentos.
+- `POST /auth/logout` e `POST /auth/refresh`: com o token em cookie `HttpOnly`, o cliente não
+  consegue mais apagá-lo nem inspecionar sua expiração — encerrar e renovar a sessão viram
+  operações de servidor.
+- `AuthController.login` grava `AccessLog` (`LOGIN_SUCESSO`/`LOGIN_FALHA`) em toda tentativa de
+  autenticação, bem-sucedida ou não (FR-073).
+- `apps/web/src/lib/csrf.ts`: lê o cookie CSRF via `document.cookie` e o expõe para `api-client.ts`
+  ecoar no header das requisições de escrita.
 
 ### Changed
 
@@ -65,6 +78,17 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - `ReportLifecycleService.openPeriodForUnit` (abertura automática/manual de período) e o cron do
   motor de SLA agora escrevem sob contexto de auditoria — sem isso a nova cobertura do gatilho
   rejeitaria a criação de `IndicatorResponse` na abertura de período.
+- `POST /auth/login` não retorna mais `accessToken` no corpo — a sessão viaja inteiramente por
+  cookie; o corpo passa a conter só `{ user }`.
+- `apps/web/src/lib/api-client.ts` troca o header `Authorization: Bearer` por `credentials: 'include'`
+  em todo `fetch`, e anexa `x-csrf-token` nas requisições de escrita.
+- `apps/web/src/context/AuthContext.tsx` sempre consulta `GET /auth/me` no mount em vez de checar
+  um token local — o cookie `HttpOnly` não é legível pelo JavaScript, então a única forma de saber
+  se há sessão válida é perguntar ao servidor.
+- CORS deixa de ter ramo aberto (`enableCors()` sem opções): `CORS_ORIGIN` virou obrigatória em
+  `env.validation.ts` (falha no boot se ausente) e `main.ts` sempre define `credentials: true` —
+  requisição com cookie de sessão é incompatível com `Access-Control-Allow-Origin: *` (T171,
+  concluída junto com T032 por ser pré-requisito funcional dela, não tarefa separada).
 
 ### Fixed
 
@@ -76,6 +100,11 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   `@updatedAt` do schema) — bug latente que só o type-check real do `ts-node` revelou, não o build
   do Nest.
 
+### Removed
+
+- `apps/web/src/lib/token-storage.ts`: sem sucessor — a sessão em cookie `HttpOnly` não deixa nada
+  para o cliente guardar.
+
 ## Fases do Spec Kit (`specs/001-plataforma-formops-base/`)
 
 Referência cruzada para quem navega por commit em vez de por `tasks.md`:
@@ -84,7 +113,8 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   custódia de chave, provisionamento de buckets.
 - **Fase 2 — Foundational** (T010-T040): em andamento. Correções de modelo e entidades novas
   aplicadas (T010-T019); migrações SQL aplicadas e verificadas contra Postgres real (T020-T025);
-  contexto e trilha de auditoria completos (T026-T030a); sessão em cookie e revogação de DML
-  pendentes (T031-T037).
+  contexto e trilha de auditoria completos (T026-T030a); sessão em cookie concluída (T031-T034);
+  revogação de DML pendente (T035-T037).
 - **Fase 12 — Convergência** (T166-T171): T166 e T167 concluídas junto com a Fase 2 (mesma correção,
-  dois ângulos, conforme recomendado). T168-T171 pendentes.
+  dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito funcional, não
+  tarefa separada). T168-T170 pendentes.

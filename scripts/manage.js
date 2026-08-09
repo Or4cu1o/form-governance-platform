@@ -54,6 +54,9 @@ function loadEnv() {
   process.env.VITE_API_URL = process.env.VITE_API_URL || `http://localhost:${process.env.API_PORT}`;
   process.env.DATABASE_URL = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
   process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || `http://localhost:${process.env.MINIO_API_PORT}`;
+  // CORS_ORIGIN (T171) e obrigatoria no boot da API (env.validation.ts) — cai
+  // aqui para um .env pre-existente que ainda nao tem a linha.
+  process.env.CORS_ORIGIN = process.env.CORS_ORIGIN || `http://localhost:${process.env.WEB_PORT}`;
 }
 
 loadEnv();

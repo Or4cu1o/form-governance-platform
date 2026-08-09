@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './env';
 import { ApiError } from './api-error';
-import { clearStoredToken, getStoredToken } from './token-storage';
+import { CSRF_HEADER_NAME, readCsrfToken } from './csrf';
 import type { ApiErrorBody } from '../types/api';
 
 export const UNAUTHORIZED_EVENT = 'formops:unauthorized';
@@ -20,7 +20,6 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody | null> 
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 401) {
-    clearStoredToken();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
 
@@ -36,9 +35,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-function authHeaders(): HeadersInit {
-  const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// Esquema de submissao dupla (F16.2): o header so importa em rota de
+// escrita — o CsrfGuard do backend ignora metodo seguro e rota publica.
+function csrfHeaders(): HeadersInit {
+  const token = readCsrfToken();
+  return token ? { [CSRF_HEADER_NAME]: token } : {};
 }
 
 type QueryValue = string | number | boolean | undefined | null;
@@ -55,7 +56,7 @@ export function buildQueryString<T extends object>(params: T): string {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { ...authHeaders() },
+    credentials: 'include',
   });
   return handleResponse<T>(response);
 }
@@ -67,9 +68,10 @@ export async function apiSend<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
+      ...csrfHeaders(),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -81,7 +83,8 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
   formData.append('file', file);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: { ...authHeaders() },
+    credentials: 'include',
+    headers: { ...csrfHeaders() },
     body: formData,
   });
   return handleResponse<T>(response);
@@ -89,11 +92,10 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
 
 export async function apiDownloadBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { ...authHeaders() },
+    credentials: 'include',
   });
 
   if (response.status === 401) {
-    clearStoredToken();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
 

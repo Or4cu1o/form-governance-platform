@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { fireEvent } from '@testing-library/react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { UNAUTHORIZED_EVENT } from '../lib/api-client';
-import { clearStoredToken, getStoredToken, setStoredToken } from '../lib/token-storage';
 import * as authApi from '../api/auth';
 import type { AuthenticatedUser } from '../types/api';
 
@@ -32,12 +31,7 @@ function Consumer() {
 }
 
 describe('AuthProvider / useAuth', () => {
-  beforeEach(() => {
-    clearStoredToken();
-  });
-
   afterEach(() => {
-    clearStoredToken();
     vi.restoreAllMocks();
   });
 
@@ -49,19 +43,8 @@ describe('AuthProvider / useAuth', () => {
     expect(() => render(<BareConsumer />)).toThrow('useAuth deve ser usado dentro de um AuthProvider');
   });
 
-  it('starts with isLoading=false and no user when there is no stored token', async () => {
-    render(
-      <AuthProvider>
-        <Consumer />
-      </AuthProvider>,
-    );
-    expect(screen.getByTestId('loading').textContent).toBe('false');
-    expect(screen.getByTestId('user').textContent).toBe('anon');
-  });
-
-  it('fetches the current user when a token is already stored', async () => {
-    setStoredToken('existing-token');
-    vi.mocked(authApi.fetchCurrentUser).mockResolvedValueOnce(mockUser);
+  it('starts loading and asks GET /auth/me, since the session cookie is not readable by JS', async () => {
+    vi.mocked(authApi.fetchCurrentUser).mockRejectedValueOnce(new Error('unauthorized'));
 
     render(
       <AuthProvider>
@@ -71,12 +54,11 @@ describe('AuthProvider / useAuth', () => {
 
     expect(screen.getByTestId('loading').textContent).toBe('true');
     await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
-    expect(screen.getByTestId('user').textContent).toBe('Ana');
+    expect(screen.getByTestId('user').textContent).toBe('anon');
   });
 
-  it('clears the token when fetching the current user fails', async () => {
-    setStoredToken('stale-token');
-    vi.mocked(authApi.fetchCurrentUser).mockRejectedValueOnce(new Error('unauthorized'));
+  it('sets the user when GET /auth/me succeeds on mount', async () => {
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValueOnce(mockUser);
 
     render(
       <AuthProvider>
@@ -85,30 +67,30 @@ describe('AuthProvider / useAuth', () => {
     );
 
     await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
-    expect(getStoredToken()).toBeNull();
-    expect(screen.getByTestId('user').textContent).toBe('anon');
+    expect(screen.getByTestId('user').textContent).toBe('Ana');
   });
 
-  it('login stores the token and sets the user', async () => {
-    vi.mocked(authApi.login).mockResolvedValueOnce({ accessToken: 'new-token', user: mockUser });
+  it('login stores the user returned by the API', async () => {
+    vi.mocked(authApi.fetchCurrentUser).mockRejectedValueOnce(new Error('unauthorized'));
+    vi.mocked(authApi.login).mockResolvedValueOnce({ user: mockUser });
 
     render(
       <AuthProvider>
         <Consumer />
       </AuthProvider>,
     );
+    await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
 
     await act(async () => {
       fireEvent.click(screen.getByText('login'));
     });
 
-    expect(getStoredToken()).toBe('new-token');
     expect(screen.getByTestId('user').textContent).toBe('Ana');
   });
 
-  it('logout clears the token and the user', async () => {
-    setStoredToken('existing-token');
+  it('logout clears the user locally and calls the API to invalidate the cookie', async () => {
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValueOnce(mockUser);
+    const logoutMock = vi.mocked(authApi.logout).mockResolvedValueOnce(undefined);
 
     render(
       <AuthProvider>
@@ -119,12 +101,11 @@ describe('AuthProvider / useAuth', () => {
 
     fireEvent.click(screen.getByText('logout'));
 
-    expect(getStoredToken()).toBeNull();
     expect(screen.getByTestId('user').textContent).toBe('anon');
+    await waitFor(() => expect(logoutMock).toHaveBeenCalled());
   });
 
-  it('logs out automatically when an UNAUTHORIZED_EVENT is dispatched', async () => {
-    setStoredToken('existing-token');
+  it('logs out automatically when an UNAUTHORIZED_EVENT is dispatched, without calling the API', async () => {
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValueOnce(mockUser);
 
     render(
@@ -139,6 +120,6 @@ describe('AuthProvider / useAuth', () => {
     });
 
     expect(screen.getByTestId('user').textContent).toBe('anon');
-    expect(getStoredToken()).toBeNull();
+    expect(authApi.logout).not.toHaveBeenCalled();
   });
 });
