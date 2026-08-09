@@ -24,6 +24,66 @@ type TemplateWithTopics = Prisma.FormTemplateGetPayload<{
   include: { topics: { include: { indicators: true } } };
 }>;
 
+// T040 — jobTitle obrigatorio para quem aprova (FR-074), estampado no
+// documento selado; seed.ts (base) cria o usuario APROVADOR generico
+// "Teste Aprovador" sem jobTitle, entao o seed de demonstracao completa o
+// dado aqui em vez de duplicar a criacao do usuario.
+const APROVADOR_JOB_TITLE = 'Gerente de Governança de Tecnologia da Informação';
+
+// T040 — corrige o placeholder "A_DEFINIR" (seed-utils.ts, upsertCatalogEntry)
+// com a unidade de medida real de cada metrica do catalogo canonico (B1,
+// data-model.md). Todo indicador proprietario usa formula "* 100"
+// (percentual), exceto a pontuacao de risco cibernetico (formula = PRE, uma
+// contagem de pontos, nao um percentual). FR-064 torna measurementUnit
+// imutavel apos o primeiro vinculo — regra aplicada em CatalogService, ainda
+// nao implementado (US4) — entao esta e a janela correta para substituir o
+// placeholder por escrita direta sem violar a regra de negocio futura.
+const RISK_SCORE_INDICATOR_TITLE = 'Riscos: Pontuação de Risco Cibernético';
+const CATALOG_PLACEHOLDER_UNIT = 'A_DEFINIR';
+
+function measurementUnitForIndicatorTitle(title: string): string {
+  return title === RISK_SCORE_INDICATOR_TITLE ? 'pontos' : '%';
+}
+
+async function curateIndicatorCatalog(
+  db: Prisma.TransactionClient,
+  templates: TemplateWithTopics[],
+): Promise<void> {
+  const allIndicators = templates.flatMap((t) => t.topics.flatMap((topic) => topic.indicators));
+  for (const indicator of allIndicators) {
+    await db.indicatorCatalog.updateMany({
+      where: { id: indicator.catalogEntryId, measurementUnit: CATALOG_PLACEHOLDER_UNIT },
+      data: { measurementUnit: measurementUnitForIndicatorTitle(indicator.title) },
+    });
+  }
+}
+
+// T040 — provisiona a linha unica de SystemSetting explicitamente (A7,
+// data-model.md), com os sete parametros novos, em vez de depender da
+// criacao tardia e implicita em PlatformSettingsService.getSettings()
+// (so ocorre na primeira leitura via admin). Valores identicos aos
+// defaults de negocio documentados no schema — o objetivo aqui e a linha
+// existir e ser inspecionavel no ambiente de demonstracao, nao divergir do
+// padrao institucional.
+async function ensureSystemSettings(db: Prisma.TransactionClient): Promise<void> {
+  const existing = await db.systemSetting.findFirst();
+  const data = {
+    evidenceRetentionYears: 10,
+    includeOptionalHolidays: false,
+    auditMaxRangeMonths: 24,
+    auditDetailedMaxRangeMonths: 12,
+    auditExactCountThreshold: 10000,
+    outlierRule: 'IQR',
+    forensicHoldYears: 1,
+  };
+  if (existing) {
+    await db.systemSetting.update({ where: { id: existing.id }, data });
+  } else {
+    await db.systemSetting.create({ data });
+  }
+}
+
+
 // Sorteia quais indicadores (por índice) ficam fora da meta em um mês, dado um
 // total de indicadores e uma taxa-alvo. Como o número de indicadores por
 // template é pequeno (ex.: 5 no N1), não dá para fatiar exatamente uma
@@ -649,6 +709,11 @@ async function main() {
           );
         }
 
+        // 1.1 Catálogo canônico: corrigir o placeholder de unidade de medida
+        //     e provisionar os sete parâmetros novos de SystemSetting (T040).
+        await curateIndicatorCatalog(prisma, [n1Template, n3Template]);
+        await ensureSystemSettings(prisma);
+
         // 2. Garantir o Usuário Aprovador da Matriz para aprovar as demonstrações
         let aprovadorMatriz = await prisma.user.findFirst({
           where: { role: RoleName.APROVADOR },
@@ -666,7 +731,13 @@ async function main() {
               passwordHash,
               role: RoleName.APROVADOR,
               primaryUnitId: matrizUnit.id,
+              jobTitle: APROVADOR_JOB_TITLE,
             },
+          });
+        } else if (!aprovadorMatriz.jobTitle) {
+          aprovadorMatriz = await prisma.user.update({
+            where: { id: aprovadorMatriz.id },
+            data: { jobTitle: APROVADOR_JOB_TITLE },
           });
         }
 

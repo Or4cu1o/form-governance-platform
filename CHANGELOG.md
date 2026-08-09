@@ -69,6 +69,10 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - `apps/api/src/prisma/append-only.spec.ts` e `no-physical-delete.spec.ts` (T036/T037): provam a
   recusa por privilégio nas seis tabelas append-only e a ausência de rota `DELETE` para usuário,
   unidade e evidência (FR-047, FR-067, FR-070).
+- `HttpExceptionFilter` (`apps/api/src/common/filters/`), global (T039): envelope de erro único
+  `{ statusCode, message, error }` em português do Brasil (FR-124) para toda resposta de falha da
+  API — traduz a frase-motivo default do Nest, preserva código de erro explícito não-default, e
+  nunca repassa a mensagem de uma exceção não tratada (ex.: erro do Prisma) ao cliente.
 
 ### Changed
 
@@ -101,6 +105,10 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   de `DATABASE_URL` (role `formops`, dona das tabelas, agora reservada a migração/seed) — sem essa
   troca o `REVOKE` de T035 não protegeria nada em runtime, já que toda escrita da aplicação passa por
   este client. `APP_DATABASE_URL` virou obrigatória em `env.validation.ts`.
+- `apps/api/prisma/seed-demo.ts` (T040): corrige o placeholder `measurementUnit: 'A_DEFINIR'` do
+  catálogo canônico com a unidade real de cada indicador ("%" ou "pontos"), preenche `jobTitle` do
+  usuário `APROVADOR` (FR-074) e provisiona explicitamente a linha única de `SystemSetting` com os
+  sete parâmetros novos.
 
 ### Fixed
 
@@ -123,11 +131,12 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
 
 - **Fase 1 — Setup** (T001-T009): concluída. `multiSchema`, dependências de selagem/antivírus,
   custódia de chave, provisionamento de buckets.
-- **Fase 2 — Foundational** (T010-T040): quase concluída. Correções de modelo e entidades novas
+- **Fase 2 — Foundational** (T010-T040): concluída. Correções de modelo e entidades novas
   aplicadas (T010-T019); migrações SQL aplicadas e verificadas contra Postgres real (T020-T025);
   contexto e trilha de auditoria completos (T026-T030a); sessão em cookie concluída (T031-T034);
-  revogação de DML concluída (T035-T037, com segregação de role `formops_app`); restam T039-T040
-  (transversais).
+  revogação de DML concluída (T035-T037, com segregação de role `formops_app`); transversais
+  concluídas (T038-T040: `ValidationPipe` já satisfeito, filtro de exceção pt-BR, seed de
+  demonstração com catálogo/`jobTitle`/`SystemSetting`).
 - **Fase 12 — Convergência** (T166-T171): T166 e T167 concluídas junto com a Fase 2 (mesma correção,
   dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito funcional, não
   tarefa separada). T168-T170 pendentes.

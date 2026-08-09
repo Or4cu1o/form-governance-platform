@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
@@ -11,6 +11,7 @@ import { CsrfGuard } from './common/guards/csrf.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CommonModule } from './common/common.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { ExportModule } from './export/export.module';
@@ -55,6 +56,9 @@ import { ValidationModule } from './validation/validation.module';
     // Roda apos os guards (req.user ja populado quando autenticado) e antes
     // de qualquer handler — T028/T166.
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },
+    // Envelope de erro unico em pt-BR para toda resposta de falha, sem
+    // vazar identificador interno nem estrutura de banco (FR-124, T039).
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })
 export class AppModule {}
