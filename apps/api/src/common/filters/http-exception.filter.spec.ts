@@ -58,6 +58,25 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  // FR-129: o 409 de conflito de versao carrega um campo "current" alem do
+  // envelope padrao — precisa sobreviver a normalizacao de message/error.
+  test('preserva campos extras do corpo da excecao (ex.: "current" do conflito de versao)', () => {
+    const { host, json } = buildHost();
+    const current = { versionId: 'version-2', variableValues: { CA: 5 }, authoredAt: '2026-08-10T00:00:00.000Z' };
+
+    filter.catch(
+      new ConflictException({ statusCode: 409, error: 'CONFLITO_DE_VERSAO', message: 'Versao desatualizada', current }),
+      host,
+    );
+
+    expect(json).toHaveBeenCalledWith({
+      statusCode: 409,
+      message: 'Versao desatualizada',
+      error: 'CONFLITO_DE_VERSAO',
+      current,
+    });
+  });
+
   test('nunca expoe a mensagem de uma excecao nao tratada ao cliente', () => {
     const { host, json, status } = buildHost();
 

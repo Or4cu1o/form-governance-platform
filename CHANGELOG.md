@@ -113,6 +113,34 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - Badge "Herdado — confira"/"Herdado parcialmente — confira" e motivo de falha de cálculo na
   própria linha do indicador (T053, `IndicatorResponseCard.tsx`); estado "verificação pendente"/
   "bloqueado" na lista de evidências e mensagem específica de recusa por tipo no upload (T054).
+- Concorrência otimista em `IndicatorResponsesService.updateValues` (T055/T056/T061, FR-129):
+  `PUT /indicator-responses/:id` exige `expectedVersionId`; gravação sobre versão já não-corrente
+  recusa com **409** `CONFLITO_DE_VERSAO` trazendo o valor vencedor, autor e instante
+  (`IndicatorVersionConflictException`); sobrescrita deliberada via `overwriteVersionId` (segunda
+  requisição explícita) fica marcada em `IndicatorResponseVersion.overwroteVersionId`.
+  `HttpExceptionFilter` ajustado para preservar campos extras do corpo da exceção (antes descartava
+  tudo além de `message`/`error`).
+- `GET indicator-responses/:id/versions` (T062): histórico completo de versões em ordem
+  cronológica estável, com autor, motivo de falha de cálculo e `overwroteVersionId` quando houver.
+- `ReportSubmissionService.recordSubmission` (T063, B3/FR-058): uma linha por submissão
+  (`ReportSubmission`), nunca sobrescrita; pontualidade aferida contra o prazo estendido apenas
+  quando a submissão pertence a um ciclo pós-reprova (`reprovalCount > 0`) — o atraso pretérito de
+  um envio anterior no mesmo ciclo nunca é perdoado retroativamente (FR-057). Gravada por
+  `ReportInstancesService.submitForReview`/`submitForApproval` e por `ValidationService.finalizeReport`
+  (etapas `ELABORACAO`/`REVISAO`/`APROVACAO`).
+- `ValidationService.finalizeReport` (T064) passa a aferir `isElaborationOnTime`/`isReviewOnTime` a
+  partir da submissão mais recente de cada etapa em `ReportSubmission`, não mais dos campos
+  `submittedForReviewAt`/`submittedForApprovalAt` comparados diretamente contra o prazo original —
+  os campos de conveniência em `ReportInstance` permanecem, mas deixam de alimentar o cálculo.
+- `IndicatorResponsesService.updateValues` reverte `validationStatus` de `APROVADO` para
+  `EM_REVISAO` no instante em que o indicador é editado (T065, US2-7) — não espera a devolução.
+  `ValidationService.finalizeReport` deixa de resetar em bloco todos os indicadores na reprova:
+  só o `REPROVADO` volta a `EM_REVISAO`, o `APROVADO` não-alterado permanece aprovado.
+- Diálogo de conflito de versão em `IndicatorResponseCard.tsx` (T066): mostra quem alterou, quando
+  e com quais valores, exigindo "Cancelar" ou "Sobrescrever mesmo assim" explícito — nunca
+  sobrescrita automática. `ApiError` estendido com `body` para carregar o payload do 409.
+- Coluna "Histórico de submissões" em `ReportsPage.tsx` (T067): lista cada `ReportSubmission` do
+  relatório (etapa, autor, data, resultado) sem colapsar reenvios pós-reprova.
 
 ### Changed
 
@@ -192,3 +220,12 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   com evidência pendente (T045/T052); sinalização de herança, motivo de cálculo e estado de
   verificação de segurança no frontend (T053-T054). T044 e T045a eram testes já cobertos por
   T168 e pela integração via controller, respectivamente — extensão em vez de recriação.
+- **Fase 4 — US2 (P2)** (T055-T067): concluída. Concorrência otimista com 409 detalhado e
+  sobrescrita deliberada (T055/T056/T060/T061); histórico de versões (T062); `ReportSubmission`
+  como fonte de verdade de pontualidade por etapa, substituindo a leitura direta dos campos de
+  conveniência (T057/T063/T064, implementado em `validation.service.ts` — `report-lifecycle.service.ts`
+  nunca leu pontualidade, só computa prazos na abertura); reversão imediata de veredito aprovado ao
+  editar e correção do reset em bloco na reprova (T058/T065); diálogo de conflito e histórico de
+  submissões no frontend (T066/T067, com T066 implementado em `IndicatorResponseCard.tsx` em vez de
+  `ValidationDetailPage.tsx`, que não edita valores de indicador). T059 já estava coberta pelo
+  mecanismo de T170 — testado ponto a ponto para `notifySubmittedForReview`.

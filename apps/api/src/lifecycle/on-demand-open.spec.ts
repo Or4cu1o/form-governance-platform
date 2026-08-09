@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InheritanceService } from '../reports/inheritance.service';
 import { ReportInstancesController } from '../reports/report-instances.controller';
 import { ReportInstancesService } from '../reports/report-instances.service';
+import { ReportSubmissionService } from '../reports/report-submission.service';
 import { ReportLifecycleService } from './report-lifecycle.service';
 
 // T045a — a idempotencia de openPeriodForUnit ja esta provada em
@@ -36,12 +37,14 @@ describe('POST /report-instances/start-current (abertura sob demanda, integratio
   // satisfazer o construtor real do service.
   const unitAccessService = {} as UnitAccessService;
   const notificationsService = {} as NotificationsService;
+  const reportSubmissionService = new ReportSubmissionService();
   const reportInstancesService = new ReportInstancesService(
     prisma,
     unitAccessService,
     notificationsService,
     reportLifecycleService,
     auditContextService,
+    reportSubmissionService,
   );
   const controller = new ReportInstancesController(reportInstancesService);
 

@@ -41,6 +41,7 @@ const pendingIndicator: IndicatorResponse = {
   isClonedFromResident: false,
   inheritanceState: 'NAO_HERDADO',
   unresolvedInheritedKeys: [],
+  currentVersionId: 'version-1',
   validationStatus: 'PENDENTE_VALIDACAO',
   updatedByUserId: null,
   createdAt: '2026-03-01T00:00:00.000Z',

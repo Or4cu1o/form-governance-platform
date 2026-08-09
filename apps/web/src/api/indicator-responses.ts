@@ -1,17 +1,27 @@
-import { apiSend, apiUpload } from '../lib/api-client';
-import type { EvidenceFile, IndicatorResponse } from '../types/api';
+import { apiGet, apiSend, apiUpload } from '../lib/api-client';
+import type { EvidenceFile, IndicatorResponse, IndicatorResponseVersion } from '../types/api';
+
+export interface UpdateIndicatorResponseValuesInput {
+  // FR-129: versao sobre a qual o autor editava — obrigatorio, permite ao
+  // backend detectar que a versao corrente mudou por baixo dele.
+  expectedVersionId: string;
+  // Preenchido so na segunda requisicao deliberada, apos o autor ver o 409
+  // e decidir conscientemente sobrescrever.
+  overwriteVersionId?: string;
+  variableValues: Record<string, number>;
+  criticalAnalysis?: string;
+  actionPlan?: string;
+}
 
 export function updateIndicatorResponseValues(
   id: string,
-  variableValues: Record<string, number>,
-  criticalAnalysis?: string,
-  actionPlan?: string,
+  input: UpdateIndicatorResponseValuesInput,
 ): Promise<IndicatorResponse> {
-  return apiSend<IndicatorResponse>('PATCH', `/indicator-responses/${encodeURIComponent(id)}`, {
-    variableValues,
-    criticalAnalysis,
-    actionPlan,
-  });
+  return apiSend<IndicatorResponse>('PUT', `/indicator-responses/${encodeURIComponent(id)}`, input);
+}
+
+export function getIndicatorResponseVersions(id: string): Promise<IndicatorResponseVersion[]> {
+  return apiGet<IndicatorResponseVersion[]>(`/indicator-responses/${encodeURIComponent(id)}/versions`);
 }
 
 export function uploadIndicatorEvidence(id: string, file: File): Promise<EvidenceFile> {

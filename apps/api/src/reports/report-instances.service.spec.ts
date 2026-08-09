@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { EvidenceScanStatus, IndicatorValidationStatus, ReportStatus, RoleName } from '@prisma/client';
+import { EvidenceScanStatus, IndicatorValidationStatus, ReportStatus, ReportSubmissionStage, RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportInstancesService } from './report-instances.service';
 import { ReportLifecycleService } from '../lifecycle/report-lifecycle.service';
+import { ReportSubmissionService } from './report-submission.service';
 
 describe('ReportInstancesService', () => {
   let service: ReportInstancesService;
@@ -18,11 +19,13 @@ describe('ReportInstancesService', () => {
   let updateManyMock: jest.Mock;
   let evidenceFileFindFirstMock: jest.Mock;
   let transactionMock: jest.Mock;
+  let dollarTransactionMock: jest.Mock;
   let hasOrgWideReadAccessMock: jest.Mock;
   let getAccessibleUnitIdsMock: jest.Mock;
   let assertReadAccessMock: jest.Mock;
   let notifySubmittedForReviewMock: jest.Mock;
   let notifySubmittedForApprovalMock: jest.Mock;
+  let recordSubmissionMock: jest.Mock;
 
   const elaborador: AuthenticatedUser = {
     id: 'elaborador-1',
@@ -44,6 +47,7 @@ describe('ReportInstancesService', () => {
     transactionMock = jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ indicatorResponse: { updateMany: updateManyMock }, reportInstance: { update: updateMock } }),
     );
+    dollarTransactionMock = jest.fn(async (fn: (tx: unknown) => unknown) => fn({ reportInstance: { update: updateMock } }));
     hasOrgWideReadAccessMock = jest.fn();
     getAccessibleUnitIdsMock = jest.fn();
     assertReadAccessMock = jest.fn();
@@ -51,11 +55,13 @@ describe('ReportInstancesService', () => {
     notifySubmittedForApprovalMock = jest.fn();
     openPeriodForUnitMock = jest.fn();
     findUniqueUnitMock = jest.fn();
+    recordSubmissionMock = jest.fn();
 
     const prisma = {
       reportInstance: { findMany: findManyMock, findUnique: findUniqueMock, update: updateMock },
       unit: { findUnique: findUniqueUnitMock },
       evidenceFile: { findFirst: evidenceFileFindFirstMock },
+      $transaction: dollarTransactionMock,
     } as unknown as PrismaService;
     const auditContextService = { runWithAuditContext: transactionMock } as unknown as AuditContextService;
 
@@ -74,12 +80,17 @@ describe('ReportInstancesService', () => {
       openPeriodForUnit: openPeriodForUnitMock,
     } as unknown as ReportLifecycleService;
 
+    const reportSubmissionService = {
+      recordSubmission: recordSubmissionMock,
+    } as unknown as ReportSubmissionService;
+
     service = new ReportInstancesService(
       prisma,
       unitAccessService,
       notificationsService,
       reportLifecycleService,
       auditContextService,
+      reportSubmissionService,
     );
   });
 
@@ -191,8 +202,15 @@ describe('ReportInstancesService', () => {
       await expect(service.submitForReview('report-1', elaborador)).rejects.toThrow(BadRequestException);
     });
 
-    test('transitions PENDENTE -> EM_REVISAO and notifies the review team', async () => {
-      findUniqueMock.mockResolvedValue({ id: 'report-1', unitId: 'unit-1', status: ReportStatus.PENDENTE });
+    test('transitions PENDENTE -> EM_REVISAO, records the ELABORACAO submission and notifies the review team', async () => {
+      const elaborationDueDate = new Date('2026-08-08T00:00:00.000Z');
+      findUniqueMock.mockResolvedValue({
+        id: 'report-1',
+        unitId: 'unit-1',
+        status: ReportStatus.PENDENTE,
+        elaborationDueDate,
+        reprovalCount: 0,
+      });
       updateMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.EM_REVISAO, unit: { id: 'unit-1' } });
 
       await service.submitForReview('report-1', elaborador);
@@ -204,6 +222,14 @@ describe('ReportInstancesService', () => {
         where: { id: 'report-1' },
         data: { status: ReportStatus.EM_REVISAO, submittedForReviewAt: expect.any(Date) },
         include: { unit: true },
+      });
+      expect(recordSubmissionMock).toHaveBeenCalledWith(expect.anything(), {
+        reportInstanceId: 'report-1',
+        stage: ReportSubmissionStage.ELABORACAO,
+        submittedByUserId: elaborador.id,
+        dueDate: elaborationDueDate,
+        extensionDueDate: null,
+        reprovalCount: 0,
       });
       expect(notifySubmittedForReviewMock).toHaveBeenCalled();
     });
@@ -239,12 +265,16 @@ describe('ReportInstancesService', () => {
       await expect(service.submitForApproval('report-1', revisor)).rejects.toThrow(BadRequestException);
     });
 
-    test('marks indicators PENDENTE_VALIDACAO, transitions to PENDENTE_APROVACAO, and notifies aprovadores', async () => {
+    test('marks indicators PENDENTE_VALIDACAO, transitions to PENDENTE_APROVACAO, records the REVISAO submission and notifies aprovadores', async () => {
+      const reviewDueDate = new Date('2026-08-10T00:00:00.000Z');
       findUniqueMock.mockResolvedValue({
         id: 'report-1',
         unitId: 'unit-1',
         status: ReportStatus.EM_REVISAO,
         unit: { id: 'unit-1' },
+        reviewDueDate,
+        slaExtensionDueDate: null,
+        reprovalCount: 0,
       });
       updateMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.PENDENTE_APROVACAO });
 
@@ -258,7 +288,44 @@ describe('ReportInstancesService', () => {
         where: { id: 'report-1' },
         data: { status: ReportStatus.PENDENTE_APROVACAO, submittedForApprovalAt: expect.any(Date) },
       });
+      expect(recordSubmissionMock).toHaveBeenCalledWith(expect.anything(), {
+        reportInstanceId: 'report-1',
+        stage: ReportSubmissionStage.REVISAO,
+        submittedByUserId: revisor.id,
+        dueDate: reviewDueDate,
+        extensionDueDate: null,
+        reprovalCount: 0,
+      });
       expect(notifySubmittedForApprovalMock).toHaveBeenCalled();
+    });
+
+    // US2-6/US3-5 (FR-056/FR-057): reenvio pos-reprova e aferido contra o
+    // prazo ESTENDIDO, nao o original — o atraso pretérito nao e apagado,
+    // mas tambem nao e o que decide a pontualidade deste novo envio.
+    test('uses the extended due date for a resubmission after a reprova', async () => {
+      const reviewDueDate = new Date('2026-08-10T00:00:00.000Z');
+      const slaExtensionDueDate = new Date('2026-08-20T00:00:00.000Z');
+      findUniqueMock.mockResolvedValue({
+        id: 'report-1',
+        unitId: 'unit-1',
+        status: ReportStatus.EM_REVISAO,
+        unit: { id: 'unit-1' },
+        reviewDueDate,
+        slaExtensionDueDate,
+        reprovalCount: 1,
+      });
+      updateMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.PENDENTE_APROVACAO });
+
+      await service.submitForApproval('report-1', revisor);
+
+      expect(recordSubmissionMock).toHaveBeenCalledWith(expect.anything(), {
+        reportInstanceId: 'report-1',
+        stage: ReportSubmissionStage.REVISAO,
+        submittedByUserId: revisor.id,
+        dueDate: reviewDueDate,
+        extensionDueDate: slaExtensionDueDate,
+        reprovalCount: 1,
+      });
     });
   });
 

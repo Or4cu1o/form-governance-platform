@@ -120,6 +120,26 @@ describe('NotificationsService', () => {
     await expect(service.notifyReportConcluded(report, unit)).resolves.toBeUndefined();
   });
 
+  // T059/US2-9/SC-016: a mesma garantia de FR-123/FR-112 vale para a
+  // transicao de submissao para revisao — a falha nao desfaz a transicao ja
+  // persistida, so fica registrada.
+  test('persists a NotificationFailure for notifySubmittedForReview without undoing the already-persisted transition', async () => {
+    findManyMock.mockResolvedValue([{ email: 'revisor@formops.local' }]);
+    sendMock.mockRejectedValue(new Error('SMTP indisponivel'));
+
+    await expect(service.notifySubmittedForReview(report, unit)).resolves.toBeUndefined();
+
+    expect(notificationFailureCreateMock).toHaveBeenCalledWith({
+      data: {
+        service: 'notifications',
+        operation: 'notifySubmittedForReview',
+        reportInstanceId: report.id,
+        recipients: ['revisor@formops.local'],
+        cause: 'SMTP indisponivel',
+      },
+    });
+  });
+
   test('does not persist a NotificationFailure when the notification succeeds', async () => {
     findManyMock.mockResolvedValue([{ email: 'elaborador@formops.local' }]);
 

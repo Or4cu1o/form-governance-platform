@@ -47,7 +47,7 @@ export class ValidationController {
   }
 
   @Post('report-instances/:id/finalize')
-  finalize(@Param('id') id: string) {
-    return this.validationService.finalizeReport(id);
+  finalize(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.validationService.finalizeReport(id, user);
   }
 }

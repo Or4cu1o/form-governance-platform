@@ -46,9 +46,9 @@ describe('ValidationController', () => {
     expect(uploadValidationEvidenceMock).toHaveBeenCalledWith('validation-record-1', user, file);
   });
 
-  test('finalize delegates to ValidationService.finalizeReport with id', async () => {
-    await controller.finalize('report-1');
+  test('finalize delegates to ValidationService.finalizeReport with id and user', async () => {
+    await controller.finalize('report-1', user);
 
-    expect(finalizeReportMock).toHaveBeenCalledWith('report-1');
+    expect(finalizeReportMock).toHaveBeenCalledWith('report-1', user);
   });
 });

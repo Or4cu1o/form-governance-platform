@@ -1,6 +1,6 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock, History, Paperclip, ShieldAlert, UploadCloud, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, History, Paperclip, ShieldAlert, UploadCloud, XCircle } from 'lucide-react';
 import { updateIndicatorResponseValues, uploadIndicatorEvidence } from '../../api/indicator-responses';
 import { getEvidenceDownloadUrl } from '../../api/evidence';
 import { ApiError } from '../../lib/api-error';
@@ -8,7 +8,7 @@ import { Button, Input, StatusBadge, Textarea, useToast } from '../ui';
 import { formatBytes, formatDateTime, formatNumber } from '../../lib/format';
 import { GOAL_OPERATOR_SYMBOL, INDICATOR_VALIDATION_LABEL, INDICATOR_VALIDATION_TONE, VALIDATION_VERDICT_LABEL, VARIABLE_LABELS } from '../../lib/status';
 import { cn } from '../../lib/cn';
-import type { IndicatorResponse, ReportInstance } from '../../types/api';
+import type { IndicatorResponse, IndicatorVersionConflict, ReportInstance } from '../../types/api';
 
 const EVIDENCE_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp';
 
@@ -58,6 +58,10 @@ function IndicatorResponseCardImpl({ response, reportInstanceId, isEditable }: P
   const [draftCriticalAnalysis, setDraftCriticalAnalysis] = useState<string>(response.criticalAnalysis ?? '');
   const [draftActionPlan, setDraftActionPlan] = useState<string>(response.actionPlan ?? '');
   const [syncedResponse, setSyncedResponse] = useState(response);
+  // FR-129/US2-10: 409 de conflito de versao — nunca descartado em
+  // silencio. Fica visivel ate o autor decidir cancelar ou sobrescrever
+  // conscientemente (segunda requisicao explicita).
+  const [conflict, setConflict] = useState<IndicatorVersionConflict | null>(null);
 
   // Ajusta o estado durante o render (padrao recomendado pelo React) em vez
   // de useEffect com setState sincrono, que dispara um render em cascata.
@@ -78,7 +82,7 @@ function IndicatorResponseCardImpl({ response, reportInstanceId, isEditable }: P
   }
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (overwriteVersionId?: string) => {
       const changed: Record<string, number> = {};
       for (const key of response.snapshotVariableKeys) {
         const raw = draftValues[key];
@@ -86,7 +90,13 @@ function IndicatorResponseCardImpl({ response, reportInstanceId, isEditable }: P
         const parsed = Number(raw);
         if (Number.isFinite(parsed)) changed[key] = parsed;
       }
-      return updateIndicatorResponseValues(response.id, changed, draftCriticalAnalysis, draftActionPlan);
+      return updateIndicatorResponseValues(response.id, {
+        expectedVersionId: response.currentVersionId ?? '',
+        overwriteVersionId,
+        variableValues: changed,
+        criticalAnalysis: draftCriticalAnalysis,
+        actionPlan: draftActionPlan,
+      });
     },
     // FR-127: patch pontual no cache (so este indicador) em vez de
     // invalidateQueries — evitar refetch e re-render da tela inteira e dos
@@ -94,10 +104,22 @@ function IndicatorResponseCardImpl({ response, reportInstanceId, isEditable }: P
     // ReportDetailPage) continuam corretos porque sao derivados de
     // report.indicatorResponses, que reflete o patch.
     onSuccess: (updatedResponse) => {
+      setConflict(null);
       showToast('Valores salvos.', 'success');
       patchIndicatorResponseInCache(queryClient, reportInstanceId, updatedResponse);
     },
-    onError: () => showToast('Não foi possível salvar os valores.', 'error'),
+    onError: (error: unknown) => {
+      // FR-129: 409 nunca vira um erro generico — carrega o valor vencedor,
+      // quem o informou e quando, para o autor decidir conscientemente.
+      if (error instanceof ApiError && error.status === 409) {
+        const current = (error.body as { current?: IndicatorVersionConflict } | undefined)?.current;
+        if (current) {
+          setConflict(current);
+          return;
+        }
+      }
+      showToast('Não foi possível salvar os valores.', 'error');
+    },
   });
 
   async function handleEvidenceChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -244,9 +266,45 @@ function IndicatorResponseCardImpl({ response, reportInstanceId, isEditable }: P
         </div>
       </div>
 
+      {/* FR-129/US2-10: o autor DEVE ver o valor vencedor, quem o informou e
+          quando, e decidir explicitamente — nunca uma sobrescrita
+          automatica nem um erro generico que esconda a alteracao alheia. */}
+      {conflict && (
+        <div className="mt-5 rounded border-l-4 border-status-reprovado bg-status-reprovado/5 px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-status-reprovado" aria-hidden="true" />
+            <div>
+              <p className="font-medium text-status-reprovado">Este indicador foi alterado por outra pessoa enquanto você editava.</p>
+              <p className="mt-1 text-ink-muted">
+                {conflict.authoredBy
+                  ? `${conflict.authoredBy.name}${conflict.authoredBy.jobTitle ? ` (${conflict.authoredBy.jobTitle})` : ''}`
+                  : 'Alguém'}{' '}
+                gravou em {formatDateTime(conflict.authoredAt)} os valores:{' '}
+                {Object.entries(conflict.variableValues)
+                  .map(([key, value]) => `${VARIABLE_LABELS[key] ?? key} = ${formatNumber(value)}`)
+                  .join(', ')}
+                .
+              </p>
+              <div className="mt-2.5 flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setConflict(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => saveMutation.mutate(conflict.versionId)}
+                  isLoading={saveMutation.isPending}
+                >
+                  Sobrescrever mesmo assim
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isEditable && (
         <div className="mt-5">
-          <Button size="sm" onClick={() => saveMutation.mutate()} isLoading={saveMutation.isPending} disabled={!isDirty}>
+          <Button size="sm" onClick={() => saveMutation.mutate(undefined)} isLoading={saveMutation.isPending} disabled={!isDirty}>
             Salvar valores
           </Button>
         </div>

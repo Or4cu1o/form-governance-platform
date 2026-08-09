@@ -1,12 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { IndicatorValidationStatus, ReportStatus, ValidationVerdict } from '@prisma/client';
+import { IndicatorValidationStatus, ReportStatus, ReportSubmissionStage, ValidationVerdict } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { assertEvidenceFileSignatureMatches } from '../common/evidence-upload.constants';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
-import { addBusinessDays, getMandatoryNationalHolidays, toUtcMidnight } from '../lifecycle/business-days.util';
+import { addBusinessDays, getMandatoryNationalHolidays } from '../lifecycle/business-days.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReportSubmissionService } from '../reports/report-submission.service';
 import { S3Service } from '../storage/s3.service';
 import { ValidateIndicatorDto } from './dto/validate-indicator.dto';
 
@@ -21,6 +22,7 @@ export class ValidationService {
     private readonly notificationsService: NotificationsService,
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly auditContextService: AuditContextService,
+    private readonly reportSubmissionService: ReportSubmissionService,
   ) {}
 
   async validateIndicator(indicatorResponseId: string, user: AuthenticatedUser, dto: ValidateIndicatorDto) {
@@ -93,7 +95,7 @@ export class ValidationService {
     );
   }
 
-  async finalizeReport(reportInstanceId: string) {
+  async finalizeReport(reportInstanceId: string, user: AuthenticatedUser) {
     const report = await this.prisma.reportInstance.findUnique({
       where: { id: reportInstanceId },
       include: { indicatorResponses: true, unit: true },
@@ -127,14 +129,21 @@ export class ValidationService {
       return countsForScore ? sum + Number(response.snapshotScoreWeight) : sum;
     }, 0);
 
-    const isElaborationOnTime = Boolean(
-      report.submittedForReviewAt &&
-        toUtcMidnight(report.submittedForReviewAt).getTime() <= report.elaborationDueDate.getTime(),
-    );
-    const isReviewOnTime = Boolean(
-      report.submittedForApprovalAt &&
-        toUtcMidnight(report.submittedForApprovalAt).getTime() <= report.reviewDueDate.getTime(),
-    );
+    // T064/FR-056/FR-057: a pontualidade nao e recomputada aqui a partir dos
+    // campos de conveniencia (submittedForReviewAt/submittedForApprovalAt) —
+    // le a submissao mais recente de cada etapa em ReportSubmission, cujo
+    // wasOnTime ja foi aferido contra o prazo vigente (o estendido, quando
+    // pos-reprova) no momento do envio. O atraso pretérito de um envio
+    // anterior fica preservado na linha dele, sem participar deste calculo.
+    const submissions = await this.prisma.reportSubmission.findMany({
+      where: { reportInstanceId },
+      orderBy: { submittedAt: 'desc' },
+    });
+    const latestElaboracao = submissions.find((submission) => submission.stage === ReportSubmissionStage.ELABORACAO);
+    const latestRevisao = submissions.find((submission) => submission.stage === ReportSubmissionStage.REVISAO);
+    const isElaborationOnTime = latestElaboracao?.wasOnTime ?? false;
+    const isReviewOnTime = latestRevisao?.wasOnTime ?? false;
+
     const deflator = Number(settings.slaDeflatorScore);
     const slaDeflatorApplied = (isElaborationOnTime ? 0 : deflator) + (isReviewOnTime ? 0 : deflator);
     const totalScore = Math.max(0, indicatorScore - slaDeflatorApplied);
@@ -143,11 +152,14 @@ export class ValidationService {
       if (hasRejection) {
         const holidays = getMandatoryNationalHolidays(new Date().getUTCFullYear());
         const slaExtensionDueDate = addBusinessDays(new Date(), settings.slaReprovalExtensionDays, holidays);
+        // US2-7: so o REPROVADO volta a exigir correcao. O APROVADO
+        // nao-alterado permanece aprovado — so recua se for editado depois
+        // (revertido na propria gravacao, ver IndicatorResponsesService).
         await tx.indicatorResponse.updateMany({
-          where: { reportInstanceId },
+          where: { reportInstanceId, validationStatus: IndicatorValidationStatus.REPROVADO },
           data: { validationStatus: IndicatorValidationStatus.EM_REVISAO },
         });
-        return tx.reportInstance.update({
+        const updatedReport = await tx.reportInstance.update({
           where: { id: reportInstanceId },
           data: {
             status: ReportStatus.EM_REVISAO,
@@ -155,9 +167,18 @@ export class ValidationService {
             slaExtensionDueDate,
           },
         });
+        await this.reportSubmissionService.recordSubmission(tx, {
+          reportInstanceId,
+          stage: ReportSubmissionStage.APROVACAO,
+          submittedByUserId: user.id,
+          dueDate: report.approvalDueDate,
+          extensionDueDate: null,
+          reprovalCount: report.reprovalCount,
+        });
+        return updatedReport;
       }
 
-      return tx.reportInstance.update({
+      const updatedReport = await tx.reportInstance.update({
         where: { id: reportInstanceId },
         data: {
           status: ReportStatus.CONCLUIDO,
@@ -169,6 +190,15 @@ export class ValidationService {
           isReviewOnTime,
         },
       });
+      await this.reportSubmissionService.recordSubmission(tx, {
+        reportInstanceId,
+        stage: ReportSubmissionStage.APROVACAO,
+        submittedByUserId: user.id,
+        dueDate: report.approvalDueDate,
+        extensionDueDate: null,
+        reprovalCount: report.reprovalCount,
+      });
+      return updatedReport;
     });
 
     if (hasRejection) {

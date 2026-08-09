@@ -12,6 +12,8 @@ export type ValidationVerdict = 'APROVADO' | 'REPROVADO';
 
 export type InheritanceState = 'NAO_HERDADO' | 'HERDADO' | 'HERDADO_PARCIAL';
 
+export type ReportSubmissionStage = 'ELABORACAO' | 'REVISAO' | 'APROVACAO';
+
 export interface AuthenticatedUser {
   id: string;
   matricula: string;
@@ -158,6 +160,9 @@ export interface IndicatorResponse {
   isClonedFromResident: boolean;
   inheritanceState: InheritanceState;
   unresolvedInheritedKeys: string[];
+  // FR-129: versao corrente — enviada de volta como expectedVersionId na
+  // proxima gravacao, para deteccao de conflito.
+  currentVersionId: string | null;
   validationStatus: IndicatorValidationStatus;
   updatedByUserId: string | null;
   createdAt: string;
@@ -167,6 +172,44 @@ export interface IndicatorResponse {
   formIndicator?: FormIndicator;
   criticalAnalysis?: string | null;
   actionPlan?: string | null;
+}
+
+export interface IndicatorResponseVersion {
+  id: string;
+  indicatorResponseId: string;
+  validFrom: string;
+  validTo: string | null;
+  variableValues: Record<string, number>;
+  calculatedValue: string | null;
+  calculationFailureReason: string | null;
+  isCompliant: boolean | null;
+  criticalAnalysis: string | null;
+  actionPlan: string | null;
+  authoredByUserId: string | null;
+  overwroteVersionId: string | null;
+  originLegacy: boolean;
+  createdAt: string;
+  authoredByUser: { nome: string; sobrenome: string; jobTitle: string | null } | null;
+}
+
+// FR-129: corpo do 409 de conflito de versao (contracts/api-rest.md).
+export interface IndicatorVersionConflict {
+  versionId: string;
+  variableValues: Record<string, number>;
+  authoredBy: { name: string; jobTitle: string | null } | null;
+  authoredAt: string;
+}
+
+export interface ReportSubmission {
+  id: string;
+  reportInstanceId: string;
+  stage: ReportSubmissionStage;
+  submittedByUserId: string;
+  submittedAt: string;
+  effectiveDueDate: string;
+  wasOnTime: boolean;
+  reprovalCountAtSubmission: number;
+  submittedByUser?: { nome: string; sobrenome: string };
 }
 
 export interface ReportInstance {
@@ -192,6 +235,7 @@ export interface ReportInstance {
   updatedAt: string;
   unit: Unit;
   indicatorResponses?: IndicatorResponse[];
+  submissions?: ReportSubmission[];
 }
 
 export interface SystemSetting {

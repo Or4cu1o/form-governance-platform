@@ -1,4 +1,12 @@
-import type { GoalOperator, IndicatorValidationStatus, ReportStatus, RoleName, UnitLevel, ValidationVerdict } from '../types/api';
+import type {
+  GoalOperator,
+  IndicatorValidationStatus,
+  ReportStatus,
+  ReportSubmissionStage,
+  RoleName,
+  UnitLevel,
+  ValidationVerdict,
+} from '../types/api';
 
 export type StatusTone = 'pendente' | 'revisao' | 'aprovacao' | 'concluido' | 'reprovado';
 
@@ -7,6 +15,13 @@ export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
   EM_REVISAO: 'Em revisão',
   PENDENTE_APROVACAO: 'Pendente de aprovação',
   CONCLUIDO: 'Concluído',
+};
+
+// T067/FR-058: rotulo de cada linha do historico de submissoes.
+export const REPORT_SUBMISSION_STAGE_LABEL: Record<ReportSubmissionStage, string> = {
+  ELABORACAO: 'Elaboração',
+  REVISAO: 'Revisão',
+  APROVACAO: 'Aprovação',
 };
 
 export const REPORT_STATUS_TONE: Record<ReportStatus, StatusTone> = {

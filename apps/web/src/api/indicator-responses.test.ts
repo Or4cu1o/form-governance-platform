@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { updateIndicatorResponseValues, uploadIndicatorEvidence } from './indicator-responses';
-import { apiSend, apiUpload } from '../lib/api-client';
+import { getIndicatorResponseVersions, updateIndicatorResponseValues, uploadIndicatorEvidence } from './indicator-responses';
+import { apiGet, apiSend, apiUpload } from '../lib/api-client';
 
 vi.mock('../lib/api-client');
 
 describe('indicator-responses api', () => {
-  it('updateIndicatorResponseValues patches variableValues by id', async () => {
+  it('updateIndicatorResponseValues PUTs expectedVersionId and variableValues by id (FR-129)', async () => {
     vi.mocked(apiSend).mockResolvedValueOnce({} as never);
-    await updateIndicatorResponseValues('response-1', { uptime: 1430 });
-    expect(apiSend).toHaveBeenCalledWith('PATCH', '/indicator-responses/response-1', {
+    await updateIndicatorResponseValues('response-1', {
+      expectedVersionId: 'version-1',
+      variableValues: { uptime: 1430 },
+    });
+    expect(apiSend).toHaveBeenCalledWith('PUT', '/indicator-responses/response-1', {
+      expectedVersionId: 'version-1',
       variableValues: { uptime: 1430 },
     });
   });
@@ -18,5 +22,11 @@ describe('indicator-responses api', () => {
     const file = new File(['x'], 'evidencia.pdf', { type: 'application/pdf' });
     await uploadIndicatorEvidence('response-1', file);
     expect(apiUpload).toHaveBeenCalledWith('/indicator-responses/response-1/evidence', file);
+  });
+
+  it('getIndicatorResponseVersions fetches the version history by id (T062)', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce([] as never);
+    await getIndicatorResponseVersions('response-1');
+    expect(apiGet).toHaveBeenCalledWith('/indicator-responses/response-1/versions');
   });
 });

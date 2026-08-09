@@ -25,7 +25,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     const body = await parseErrorBody(response);
-    throw new ApiError(response.status, extractMessage(body, `Falha na requisicao (${response.status})`));
+    throw new ApiError(response.status, extractMessage(body, `Falha na requisicao (${response.status})`), body);
   }
 
   if (response.status === 204) {
@@ -101,7 +101,7 @@ export async function apiDownloadBlob(path: string): Promise<{ blob: Blob; filen
 
   if (!response.ok) {
     const body = await parseErrorBody(response);
-    throw new ApiError(response.status, extractMessage(body, `Falha na requisicao (${response.status})`));
+    throw new ApiError(response.status, extractMessage(body, `Falha na requisicao (${response.status})`), body);
   }
 
   const disposition = response.headers.get('content-disposition');

@@ -1,18 +1,43 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InheritanceState } from '@prisma/client';
+import { IndicatorValidationStatus, InheritanceState } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { assertCanEditReportData } from '../common/report-edit-access.util';
 import { AuditContextService } from '../common/services/audit-context.service';
+import { UnitAccessService } from '../common/services/unit-access.service';
 import { checkCompliance, evaluateFormula } from '../forms/formula-evaluator.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateIndicatorResponseDto } from './dto/update-indicator-response.dto';
+import { IndicatorVersionConflictException } from './indicator-version-conflict.exception';
 
 @Injectable()
 export class IndicatorResponsesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditContextService: AuditContextService,
+    private readonly unitAccessService: UnitAccessService,
   ) {}
+
+  // T062 (FR-058/US2): historico completo de versoes de uma resposta, em
+  // ordem cronologica estavel — inclui motivo de falha de calculo e
+  // overwroteVersionId quando a versao resultou de sobrescrita consciente.
+  async getVersionHistory(responseId: string, user: AuthenticatedUser) {
+    const response = await this.prisma.indicatorResponse.findUnique({
+      where: { id: responseId },
+      include: { reportInstance: true },
+    });
+    if (!response) {
+      throw new NotFoundException('Resposta de indicador nao encontrada');
+    }
+    // Leitura do historico segue o mesmo escopo de unidade de qualquer
+    // outra leitura de relatorio (FR-006) — nao introduz acesso novo.
+    await this.unitAccessService.assertReadAccess(response.reportInstance.unitId, user);
+
+    return this.prisma.indicatorResponseVersion.findMany({
+      where: { indicatorResponseId: responseId },
+      orderBy: { validFrom: 'asc' },
+      include: { authoredByUser: { select: { nome: true, sobrenome: true, jobTitle: true } } },
+    });
+  }
 
   async updateValues(responseId: string, user: AuthenticatedUser, dto: UpdateIndicatorResponseDto) {
     const response = await this.prisma.indicatorResponse.findUnique({
@@ -23,6 +48,26 @@ export class IndicatorResponsesService {
       throw new NotFoundException('Resposta de indicador nao encontrada');
     }
     assertCanEditReportData(response.reportInstance, user);
+
+    // FR-129: a gravacao so avanca se a versao que o autor editava ainda e
+    // a corrente, OU se ele ja confirmou a sobrescrita deliberada
+    // (overwriteVersionId, segunda requisicao explicita apos ver o 409).
+    if (dto.expectedVersionId !== response.currentVersionId && !dto.overwriteVersionId) {
+      const current = response.currentVersionId
+        ? await this.prisma.indicatorResponseVersion.findUnique({
+            where: { id: response.currentVersionId },
+            include: { authoredByUser: { select: { nome: true, sobrenome: true, jobTitle: true } } },
+          })
+        : null;
+      throw new IndicatorVersionConflictException({
+        versionId: current?.id ?? '',
+        variableValues: (current?.variableValues as Record<string, number>) ?? {},
+        authoredBy: current?.authoredByUser
+          ? { name: `${current.authoredByUser.nome} ${current.authoredByUser.sobrenome}`, jobTitle: current.authoredByUser.jobTitle }
+          : null,
+        authoredAt: (current?.createdAt ?? new Date()).toISOString(),
+      });
+    }
 
     const allowedKeys = new Set(response.snapshotVariableKeys);
     const unknownKeys = Object.keys(dto.variableValues).filter((key) => !allowedKeys.has(key));
@@ -70,6 +115,15 @@ export class IndicatorResponsesService {
     const criticalAnalysis = dto.criticalAnalysis !== undefined ? dto.criticalAnalysis : response.criticalAnalysis;
     const actionPlan = dto.actionPlan !== undefined ? dto.actionPlan : response.actionPlan;
 
+    // US2-7/T065: um indicador ja aprovado na Mesa de Validacao que seja
+    // alterado volta IMEDIATAMENTE (nesta mesma gravacao, nao so na
+    // devolucao) a exigir nova contraprova — o veredito anterior nao se
+    // aplica mais a um conteudo diferente do que foi avaliado.
+    const validationStatus =
+      response.validationStatus === IndicatorValidationStatus.APROVADO
+        ? IndicatorValidationStatus.EM_REVISAO
+        : undefined;
+
     return this.auditContextService.runWithAuditContext(async (tx) => {
       // T047 (Principio I): a resposta em si nunca sofre UPDATE de conteudo
       // — toda alteracao abre uma versao nova (INSERT em
@@ -93,6 +147,10 @@ export class IndicatorResponsesService {
           inheritanceState: InheritanceState.NAO_HERDADO,
           unresolvedInheritedKeys: [],
           originLegacy: false,
+          // FR-129: preenchido so na segunda requisicao deliberada, apos o
+          // autor ver o valor vencedor e decidir conscientemente
+          // sobrescreve-lo — fica distinguivel na trilha de versoes.
+          overwroteVersionId: dto.overwriteVersionId ?? null,
         },
       });
 
@@ -110,6 +168,7 @@ export class IndicatorResponsesService {
           updatedByUserId: user.id,
           updatedAt: new Date(),
           currentVersionId: version.id,
+          ...(validationStatus && { validationStatus }),
         },
       });
     });

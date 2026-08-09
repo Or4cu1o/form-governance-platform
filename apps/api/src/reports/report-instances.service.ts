@@ -1,5 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EvidenceScanStatus, IndicatorValidationStatus, Prisma, ReportStatus, RoleName } from '@prisma/client';
+import {
+  EvidenceScanStatus,
+  IndicatorValidationStatus,
+  Prisma,
+  ReportInstance,
+  ReportStatus,
+  ReportSubmissionStage,
+  RoleName,
+} from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { UnitAccessService } from '../common/services/unit-access.service';
@@ -7,6 +15,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportLifecycleService } from '../lifecycle/report-lifecycle.service';
 import { ListReportInstancesQueryDto } from './dto/list-report-instances-query.dto';
+import { ReportSubmissionService } from './report-submission.service';
 
 @Injectable()
 export class ReportInstancesService {
@@ -18,6 +27,7 @@ export class ReportInstancesService {
     private readonly notificationsService: NotificationsService,
     private readonly reportLifecycleService: ReportLifecycleService,
     private readonly auditContextService: AuditContextService,
+    private readonly reportSubmissionService: ReportSubmissionService,
   ) {}
 
   async startCurrentPeriodForElaborador(user: AuthenticatedUser) {
@@ -101,7 +111,17 @@ export class ReportInstancesService {
 
     return this.prisma.reportInstance.findMany({
       where,
-      include: { unit: true },
+      // T067/FR-058/US3-8: historico completo de submissoes, sem colapsar
+      // reenvios — a mesma unidade pode ter mais de uma linha por etapa
+      // apos uma reprova. Autor incluso porque a tela exibe "cada submissao
+      // aparece com etapa, autor, data, prazo vigente aferido e resultado".
+      include: {
+        unit: true,
+        submissions: {
+          orderBy: { submittedAt: 'asc' },
+          include: { submittedByUser: { select: { nome: true, sobrenome: true } } },
+        },
+      },
       orderBy: { [sortBy ?? 'referenceMonth']: sortOrder ?? 'desc' },
     });
   }
@@ -200,6 +220,8 @@ export class ReportInstancesService {
       ReportStatus.PENDENTE,
       ReportStatus.EM_REVISAO,
       { submittedForReviewAt: new Date() },
+      ReportSubmissionStage.ELABORACAO,
+      (report) => report.elaborationDueDate,
     );
     await this.notificationsService.notifySubmittedForReview(updated, updated.unit);
     return updated;
@@ -224,10 +246,21 @@ export class ReportInstancesService {
         where: { reportInstanceId: id },
         data: { validationStatus: IndicatorValidationStatus.PENDENTE_VALIDACAO },
       });
-      return tx.reportInstance.update({
+      const updatedReport = await tx.reportInstance.update({
         where: { id },
         data: { status: ReportStatus.PENDENTE_APROVACAO, submittedForApprovalAt: new Date() },
       });
+      // T057/T063 (FR-056/FR-058): pode ser reenvio pos-reprova — o prazo
+      // vigente e o estendido (slaExtensionDueDate) quando reprovalCount > 0.
+      await this.reportSubmissionService.recordSubmission(tx, {
+        reportInstanceId: id,
+        stage: ReportSubmissionStage.REVISAO,
+        submittedByUserId: user.id,
+        dueDate: report.reviewDueDate,
+        extensionDueDate: report.slaExtensionDueDate,
+        reprovalCount: report.reprovalCount,
+      });
+      return updatedReport;
     });
     await this.notificationsService.notifySubmittedForApproval(updated, report.unit);
     return updated;
@@ -240,6 +273,8 @@ export class ReportInstancesService {
     expectedFrom: ReportStatus,
     to: ReportStatus,
     extraData: Record<string, unknown>,
+    submissionStage: ReportSubmissionStage,
+    dueDateOf: (report: ReportInstance) => Date,
   ) {
     const report = await this.prisma.reportInstance.findUnique({ where: { id } });
     if (!report) {
@@ -253,10 +288,21 @@ export class ReportInstancesService {
         `Transicao invalida: relatorio esta em ${report.status}, esperado ${expectedFrom}`,
       );
     }
-    return this.prisma.reportInstance.update({
-      where: { id },
-      data: { status: to, ...extraData },
-      include: { unit: true },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.reportInstance.update({
+        where: { id },
+        data: { status: to, ...extraData },
+        include: { unit: true },
+      });
+      await this.reportSubmissionService.recordSubmission(tx, {
+        reportInstanceId: id,
+        stage: submissionStage,
+        submittedByUserId: user.id,
+        dueDate: dueDateOf(report),
+        extensionDueDate: submissionStage === ReportSubmissionStage.REVISAO ? report.slaExtensionDueDate : null,
+        reprovalCount: report.reprovalCount,
+      });
+      return updated;
     });
   }
 }

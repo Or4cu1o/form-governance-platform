@@ -27,6 +27,7 @@ const baseResponse: IndicatorResponse = {
   isClonedFromResident: false,
   inheritanceState: 'NAO_HERDADO',
   unresolvedInheritedKeys: [],
+  currentVersionId: 'version-1',
   validationStatus: 'EM_REVISAO',
   updatedByUserId: null,
   createdAt: '2026-03-01T00:00:00.000Z',
@@ -71,14 +72,50 @@ describe('IndicatorResponseCard', () => {
       fireEvent.click(saveButton);
     });
 
-    expect(indicatorResponsesApi.updateIndicatorResponseValues).toHaveBeenCalledWith(
-      'response-1',
-      {
+    expect(indicatorResponsesApi.updateIndicatorResponseValues).toHaveBeenCalledWith('response-1', {
+      expectedVersionId: 'version-1',
+      overwriteVersionId: undefined,
+      variableValues: {
         uptimeMinutos: 1435,
         totalMinutos: 1440,
       },
-      '',
-      '',
+      criticalAnalysis: '',
+      actionPlan: '',
+    });
+  });
+
+  // T066/FR-129/US2-10: o 409 de conflito de versao mostra o valor
+  // vencedor, quem o informou e quando, e exige escolha explicita — nunca
+  // sobrescreve nem descarta em silencio.
+  it('shows the winning value, author and instant on a 409 version conflict, and lets the author overwrite deliberately', async () => {
+    vi.mocked(indicatorResponsesApi.updateIndicatorResponseValues).mockRejectedValueOnce(
+      new ApiError(409, 'Este indicador foi alterado por outra pessoa enquanto você editava.', {
+        current: {
+          versionId: 'version-2',
+          variableValues: { uptimeMinutos: 1438, totalMinutos: 1440 },
+          authoredBy: { name: 'Rita Revisora', jobTitle: 'Coordenadora Técnica' },
+          authoredAt: '2026-08-10T14:30:00.000Z',
+        },
+      }),
+    );
+
+    renderWithProviders(<IndicatorResponseCard response={baseResponse} reportInstanceId="report-1" isEditable />);
+    fireEvent.change(screen.getByLabelText('uptimeMinutos'), { target: { value: '1435' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar valores' }));
+    });
+
+    expect(await screen.findByText(/alterado por outra pessoa/)).toBeInTheDocument();
+    expect(screen.getByText(/Rita Revisora \(Coordenadora Técnica\)/)).toBeInTheDocument();
+
+    vi.mocked(indicatorResponsesApi.updateIndicatorResponseValues).mockResolvedValueOnce(baseResponse);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Sobrescrever mesmo assim' }));
+    });
+
+    expect(indicatorResponsesApi.updateIndicatorResponseValues).toHaveBeenLastCalledWith(
+      'response-1',
+      expect.objectContaining({ overwriteVersionId: 'version-2' }),
     );
   });
 

@@ -5,11 +5,12 @@ import { Plus } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { ScoreTrendChart } from '../components/reports/ScoreTrendChart';
 import { useAuth } from '../context/AuthContext';
+import { cn } from '../lib/cn';
 import { listReportInstances, startCurrentReportInstance } from '../api/reports';
 import { formatDateTime, formatNumber, formatReferenceMonth } from '../lib/format';
 import { getRelevantDeadline } from '../lib/report-deadline';
 import { buildLastSixMonthsScoreTrend } from '../lib/score-trend';
-import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE } from '../lib/status';
+import { REPORT_STATUS_LABEL, REPORT_STATUS_TONE, REPORT_SUBMISSION_STAGE_LABEL } from '../lib/status';
 import { Button, EmptyState, Select, Spinner, StatusBadge, Table, TBody, TD, TH, THead, TR, useToast } from '../components/ui';
 import type { ReportStatus } from '../types/api';
 
@@ -170,8 +171,7 @@ export function ReportsPage() {
                 <TH>Status</TH>
                 <TH>Prazo (SLA)</TH>
                 <TH>Nota</TH>
-                <TH>Enviado para revisão em</TH>
-                <TH>Enviado para aprovação em</TH>
+                <TH>Histórico de submissões</TH>
                 <TH>Ações</TH>
               </TR>
             </THead>
@@ -191,8 +191,35 @@ export function ReportsPage() {
                   <TD className="data-figure text-sm">
                     {report.totalScore !== null ? `${formatNumber(report.totalScore)} / 10` : '—'}
                   </TD>
-                  <TD className="data-figure text-sm">{formatDateTime(report.submittedForReviewAt)}</TD>
-                  <TD className="data-figure text-sm">{formatDateTime(report.submittedForApprovalAt)}</TD>
+                  <TD className="text-xs">
+                    {/* T067/FR-058: uma linha por envio, sem colapsar reenvios —
+                        um relatorio reprovado e reenviado mostra as DUAS
+                        submissoes da etapa REVISAO, nao so a mais recente. */}
+                    {(report.submissions ?? []).length === 0 ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <ul className="flex flex-col gap-1">
+                        {report.submissions!.map((submission) => (
+                          <li key={submission.id} className="flex items-center gap-1.5">
+                            <span
+                              className={cn(
+                                'font-medium',
+                                submission.wasOnTime ? 'text-status-concluido' : 'text-status-reprovado',
+                              )}
+                            >
+                              {submission.wasOnTime ? 'No prazo' : 'Fora do prazo'}
+                            </span>
+                            <span className="text-ink-muted">
+                              {REPORT_SUBMISSION_STAGE_LABEL[submission.stage]} · {formatDateTime(submission.submittedAt)}
+                              {submission.submittedByUser
+                                ? ` · ${submission.submittedByUser.nome} ${submission.submittedByUser.sobrenome}`
+                                : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TD>
                   <TD>
                     {report.status === 'PENDENTE' && user?.role === 'ELABORADOR' ? (
                       <Link to={`/relatorios/${report.id}`}>

@@ -53,6 +53,7 @@ export function makeReportInstance(overrides: Partial<ReportInstance> = {}): Rep
     updatedAt: '2026-03-01T00:00:00.000Z',
     unit: makeUnit(),
     indicatorResponses: [],
+    submissions: [],
     ...overrides,
   };
 }
@@ -75,6 +76,7 @@ export function makeIndicatorResponse(overrides: Partial<IndicatorResponse> = {}
     isClonedFromResident: false,
     inheritanceState: 'NAO_HERDADO',
     unresolvedInheritedKeys: [],
+    currentVersionId: 'version-1',
     validationStatus: 'EM_REVISAO',
     updatedByUserId: null,
     createdAt: '2026-03-01T00:00:00.000Z',

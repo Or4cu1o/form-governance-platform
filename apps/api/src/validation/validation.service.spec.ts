@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { IndicatorValidationStatus, ReportStatus, RoleName, ValidationVerdict } from '@prisma/client';
+import { IndicatorValidationStatus, ReportStatus, ReportSubmissionStage, RoleName, ValidationVerdict } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { AuditContextService } from '../common/services/audit-context.service';
 import { PlatformSettingsService } from '../export/platform-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReportSubmissionService } from '../reports/report-submission.service';
 import { S3Service } from '../storage/s3.service';
 import { ValidationService } from './validation.service';
 
@@ -13,6 +14,7 @@ describe('ValidationService', () => {
   let findUniqueIndicatorResponseMock: jest.Mock;
   let findUniqueReportInstanceMock: jest.Mock;
   let findUniqueValidationRecordMock: jest.Mock;
+  let findManyReportSubmissionMock: jest.Mock;
   let uploadMock: jest.Mock;
   let notifyReprovedMock: jest.Mock;
   let notifyConcludedMock: jest.Mock;
@@ -21,6 +23,7 @@ describe('ValidationService', () => {
   let txUpdateManyIndicatorResponseMock: jest.Mock;
   let txUpdateReportInstanceMock: jest.Mock;
   let txCreateEvidenceFileMock: jest.Mock;
+  let recordSubmissionMock: jest.Mock;
 
   const user: AuthenticatedUser = {
     id: 'aprovador-1',
@@ -36,6 +39,7 @@ describe('ValidationService', () => {
     findUniqueIndicatorResponseMock = jest.fn();
     findUniqueReportInstanceMock = jest.fn();
     findUniqueValidationRecordMock = jest.fn();
+    findManyReportSubmissionMock = jest.fn().mockResolvedValue([]);
     uploadMock = jest.fn().mockResolvedValue('evidences/file-key.pdf');
     notifyReprovedMock = jest.fn();
     notifyConcludedMock = jest.fn();
@@ -44,6 +48,7 @@ describe('ValidationService', () => {
     txUpdateManyIndicatorResponseMock = jest.fn();
     txUpdateReportInstanceMock = jest.fn();
     txCreateEvidenceFileMock = jest.fn().mockResolvedValue({ id: 'evidence-1' });
+    recordSubmissionMock = jest.fn();
 
     const tx = {
       validationRecord: { create: txCreateValidationRecordMock },
@@ -56,6 +61,7 @@ describe('ValidationService', () => {
       indicatorResponse: { findUnique: findUniqueIndicatorResponseMock },
       reportInstance: { findUnique: findUniqueReportInstanceMock },
       validationRecord: { findUnique: findUniqueValidationRecordMock },
+      reportSubmission: { findMany: findManyReportSubmissionMock },
     } as unknown as PrismaService;
 
     const s3Service = {
@@ -79,8 +85,18 @@ describe('ValidationService', () => {
     const auditContextService = {
       runWithAuditContext: jest.fn((fn: (tx: unknown) => unknown) => fn(tx)),
     } as unknown as AuditContextService;
+    const reportSubmissionService = {
+      recordSubmission: recordSubmissionMock,
+    } as unknown as ReportSubmissionService;
 
-    service = new ValidationService(prisma, s3Service, notificationsService, platformSettingsService, auditContextService);
+    service = new ValidationService(
+      prisma,
+      s3Service,
+      notificationsService,
+      platformSettingsService,
+      auditContextService,
+      reportSubmissionService,
+    );
   });
 
   describe('validateIndicator', () => {
@@ -216,13 +232,13 @@ describe('ValidationService', () => {
     test('throws NotFoundException when the report does not exist', async () => {
       findUniqueReportInstanceMock.mockResolvedValue(null);
 
-      await expect(service.finalizeReport('missing-report')).rejects.toThrow(NotFoundException);
+      await expect(service.finalizeReport('missing-report', user)).rejects.toThrow(NotFoundException);
     });
 
     test('throws BadRequestException when the report is not in PENDENTE_APROVACAO', async () => {
       findUniqueReportInstanceMock.mockResolvedValue({ status: ReportStatus.EM_REVISAO, indicatorResponses: [] });
 
-      await expect(service.finalizeReport('report-1')).rejects.toThrow(BadRequestException);
+      await expect(service.finalizeReport('report-1', user)).rejects.toThrow(BadRequestException);
     });
 
     test('throws BadRequestException when indicators are still pending validation', async () => {
@@ -231,18 +247,17 @@ describe('ValidationService', () => {
         indicatorResponses: [{ validationStatus: IndicatorValidationStatus.PENDENTE_VALIDACAO }],
       });
 
-      await expect(service.finalizeReport('report-1')).rejects.toThrow(BadRequestException);
+      await expect(service.finalizeReport('report-1', user)).rejects.toThrow(BadRequestException);
     });
 
     test('concludes the report and sums the score only for indicators that are both compliant and approved', async () => {
+      const approvalDueDate = new Date('2026-07-12T00:00:00.000Z');
       findUniqueReportInstanceMock.mockResolvedValue({
         id: 'report-1',
         unit: { id: 'unit-matriz' },
         status: ReportStatus.PENDENTE_APROVACAO,
-        elaborationDueDate: new Date('2026-07-08T00:00:00.000Z'),
-        reviewDueDate: new Date('2026-07-10T00:00:00.000Z'),
-        submittedForReviewAt: new Date('2026-07-07T12:00:00.000Z'),
-        submittedForApprovalAt: new Date('2026-07-09T12:00:00.000Z'),
+        approvalDueDate,
+        reprovalCount: 0,
         indicatorResponses: [
           { isCompliant: true, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 6 },
           // Meta batida, porem reprovada na Mesa de Validacao: nao pontua.
@@ -250,9 +265,13 @@ describe('ValidationService', () => {
           { isCompliant: false, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 10 },
         ],
       });
+      findManyReportSubmissionMock.mockResolvedValue([
+        { stage: ReportSubmissionStage.ELABORACAO, wasOnTime: true },
+        { stage: ReportSubmissionStage.REVISAO, wasOnTime: true },
+      ]);
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1');
+      await service.finalizeReport('report-1', user);
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith({
         where: { id: 'report-1' },
@@ -266,6 +285,14 @@ describe('ValidationService', () => {
           isReviewOnTime: true,
         },
       });
+      expect(recordSubmissionMock).toHaveBeenCalledWith(expect.anything(), {
+        reportInstanceId: 'report-1',
+        stage: ReportSubmissionStage.APROVACAO,
+        submittedByUserId: user.id,
+        dueDate: approvalDueDate,
+        extensionDueDate: null,
+        reprovalCount: 0,
+      });
       expect(notifyConcludedMock).toHaveBeenCalled();
       expect(notifyReprovedMock).not.toHaveBeenCalled();
     });
@@ -275,40 +302,42 @@ describe('ValidationService', () => {
         id: 'report-1',
         unit: { id: 'unit-matriz' },
         status: ReportStatus.PENDENTE_APROVACAO,
-        elaborationDueDate: new Date('2026-07-08T00:00:00.000Z'),
-        reviewDueDate: new Date('2026-07-10T00:00:00.000Z'),
-        submittedForReviewAt: new Date('2026-07-07T12:00:00.000Z'),
-        submittedForApprovalAt: new Date('2026-07-09T12:00:00.000Z'),
+        approvalDueDate: new Date('2026-07-12T00:00:00.000Z'),
+        reprovalCount: 0,
         indicatorResponses: [
           { isCompliant: true, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 6 },
         ],
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1');
+      await service.finalizeReport('report-1', user);
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ indicatorScore: 6 }) }),
       );
     });
 
-    test('applies the SLA deflator once per stage that missed its due date', async () => {
+    // T064/FR-056: le a submissao mais recente de cada etapa em
+    // ReportSubmission (wasOnTime ja aferido no envio), nao mais os campos
+    // de conveniencia do relatorio.
+    test('applies the SLA deflator once per stage whose latest submission missed its due date', async () => {
       findUniqueReportInstanceMock.mockResolvedValue({
         id: 'report-1',
         unit: { id: 'unit-matriz' },
         status: ReportStatus.PENDENTE_APROVACAO,
-        elaborationDueDate: new Date('2026-07-08T00:00:00.000Z'),
-        reviewDueDate: new Date('2026-07-10T00:00:00.000Z'),
-        // Elaboracao no prazo (07 <= 08), revisao fora do prazo (12 > 10).
-        submittedForReviewAt: new Date('2026-07-07T12:00:00.000Z'),
-        submittedForApprovalAt: new Date('2026-07-12T12:00:00.000Z'),
+        approvalDueDate: new Date('2026-07-12T00:00:00.000Z'),
+        reprovalCount: 0,
         indicatorResponses: [
           { isCompliant: true, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 10 },
         ],
       });
+      findManyReportSubmissionMock.mockResolvedValue([
+        { stage: ReportSubmissionStage.ELABORACAO, wasOnTime: true },
+        { stage: ReportSubmissionStage.REVISAO, wasOnTime: false },
+      ]);
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1');
+      await service.finalizeReport('report-1', user);
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith({
         where: { id: 'report-1' },
@@ -324,41 +353,80 @@ describe('ValidationService', () => {
       });
     });
 
+    // US3-5/FR-056: reenvio pos-reprova dentro do prazo estendido zera o
+    // desconto da etapa mesmo que o PRIMEIRO envio daquela etapa tenha sido
+    // tardio — porque le a submissao mais RECENTE (findFirst apos orderBy
+    // desc), nao a primeira.
+    test('uses the most recent REVISAO submission, forgiving an earlier late attempt within the same stage', async () => {
+      findUniqueReportInstanceMock.mockResolvedValue({
+        id: 'report-1',
+        unit: { id: 'unit-matriz' },
+        status: ReportStatus.PENDENTE_APROVACAO,
+        approvalDueDate: new Date('2026-07-12T00:00:00.000Z'),
+        reprovalCount: 1,
+        indicatorResponses: [
+          { isCompliant: true, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 10 },
+        ],
+      });
+      findManyReportSubmissionMock.mockResolvedValue([
+        // orderBy submittedAt desc: o reenvio (pontual) vem primeiro.
+        { stage: ReportSubmissionStage.REVISAO, wasOnTime: true, submittedAt: new Date('2026-07-22T00:00:00.000Z') },
+        { stage: ReportSubmissionStage.ELABORACAO, wasOnTime: true },
+        { stage: ReportSubmissionStage.REVISAO, wasOnTime: false, submittedAt: new Date('2026-07-11T00:00:00.000Z') },
+      ]);
+      txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
+
+      await service.finalizeReport('report-1', user);
+
+      expect(txUpdateReportInstanceMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ isReviewOnTime: true, slaDeflatorApplied: 0 }) }),
+      );
+    });
+
     test('floors the total score at zero when the deflator exceeds the indicator score', async () => {
       findUniqueReportInstanceMock.mockResolvedValue({
         id: 'report-1',
         unit: { id: 'unit-matriz' },
         status: ReportStatus.PENDENTE_APROVACAO,
-        elaborationDueDate: new Date('2026-07-08T00:00:00.000Z'),
-        reviewDueDate: new Date('2026-07-10T00:00:00.000Z'),
-        submittedForReviewAt: new Date('2026-07-20T12:00:00.000Z'),
-        submittedForApprovalAt: new Date('2026-07-25T12:00:00.000Z'),
+        approvalDueDate: new Date('2026-07-25T00:00:00.000Z'),
+        reprovalCount: 0,
         indicatorResponses: [
           { isCompliant: true, validationStatus: IndicatorValidationStatus.APROVADO, snapshotScoreWeight: 1 },
         ],
       });
+      findManyReportSubmissionMock.mockResolvedValue([
+        { stage: ReportSubmissionStage.ELABORACAO, wasOnTime: false },
+        { stage: ReportSubmissionStage.REVISAO, wasOnTime: false },
+      ]);
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.CONCLUIDO });
 
-      await service.finalizeReport('report-1');
+      await service.finalizeReport('report-1', user);
 
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ totalScore: 0, slaDeflatorApplied: 4 }) }),
       );
     });
 
-    test('reopens the report for review and notifies rejection when any indicator was rejected', async () => {
+    // US2-7: so o REPROVADO volta a exigir correcao — o APROVADO
+    // nao-alterado permanece aprovado, nao e resetado em bloco.
+    test('reopens the report for review, resets only the REPROVADO indicators, records the APROVACAO submission and notifies rejection', async () => {
       findUniqueReportInstanceMock.mockResolvedValue({
         id: 'report-1',
         unit: { id: 'unit-matriz' },
         status: ReportStatus.PENDENTE_APROVACAO,
-        indicatorResponses: [{ validationStatus: IndicatorValidationStatus.REPROVADO }],
+        approvalDueDate: new Date('2026-07-12T00:00:00.000Z'),
+        reprovalCount: 0,
+        indicatorResponses: [
+          { validationStatus: IndicatorValidationStatus.REPROVADO },
+          { validationStatus: IndicatorValidationStatus.APROVADO },
+        ],
       });
       txUpdateReportInstanceMock.mockResolvedValue({ id: 'report-1', status: ReportStatus.EM_REVISAO });
 
-      await service.finalizeReport('report-1');
+      await service.finalizeReport('report-1', user);
 
       expect(txUpdateManyIndicatorResponseMock).toHaveBeenCalledWith({
-        where: { reportInstanceId: 'report-1' },
+        where: { reportInstanceId: 'report-1', validationStatus: IndicatorValidationStatus.REPROVADO },
         data: { validationStatus: IndicatorValidationStatus.EM_REVISAO },
       });
       expect(txUpdateReportInstanceMock).toHaveBeenCalledWith({
@@ -368,6 +436,14 @@ describe('ValidationService', () => {
           reprovalCount: { increment: 1 },
           slaExtensionDueDate: expect.any(Date),
         },
+      });
+      expect(recordSubmissionMock).toHaveBeenCalledWith(expect.anything(), {
+        reportInstanceId: 'report-1',
+        stage: ReportSubmissionStage.APROVACAO,
+        submittedByUserId: user.id,
+        dueDate: new Date('2026-07-12T00:00:00.000Z'),
+        extensionDueDate: null,
+        reprovalCount: 0,
       });
       expect(notifyReprovedMock).toHaveBeenCalled();
       expect(notifyConcludedMock).not.toHaveBeenCalled();

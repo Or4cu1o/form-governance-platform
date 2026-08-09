@@ -67,6 +67,47 @@ describe('ReportsPage', () => {
     expect(screen.getByText('8 / 10')).toBeInTheDocument();
   });
 
+  // T067/FR-058/US3-8: cada submissao aparece com etapa, autor, data e
+  // resultado — um reenvio pos-reprova mostra AS DUAS linhas de REVISAO,
+  // nao so a mais recente (nenhuma sobrescrita).
+  it('shows every submission of the history without collapsing a resubmission after reprova', async () => {
+    vi.mocked(AuthContextModule.useAuth).mockReturnValue({ user: makeUser(), isLoading: false, login: vi.fn(), logout: vi.fn() });
+    vi.mocked(reportsApi.listReportInstances).mockResolvedValueOnce([
+      makeReportInstance({
+        status: 'EM_REVISAO',
+        submissions: [
+          {
+            id: 'submission-1',
+            reportInstanceId: 'report-1',
+            stage: 'REVISAO',
+            submittedByUserId: 'revisor-1',
+            submittedAt: '2026-03-11T00:00:00.000Z',
+            effectiveDueDate: '2026-03-10T00:00:00.000Z',
+            wasOnTime: false,
+            reprovalCountAtSubmission: 0,
+            submittedByUser: { nome: 'Rita', sobrenome: 'Revisora' },
+          },
+          {
+            id: 'submission-2',
+            reportInstanceId: 'report-1',
+            stage: 'REVISAO',
+            submittedByUserId: 'revisor-1',
+            submittedAt: '2026-03-20T00:00:00.000Z',
+            effectiveDueDate: '2026-03-22T00:00:00.000Z',
+            wasOnTime: true,
+            reprovalCountAtSubmission: 1,
+            submittedByUser: { nome: 'Rita', sobrenome: 'Revisora' },
+          },
+        ],
+      }),
+    ]);
+
+    renderReports();
+
+    expect(await screen.findByText('Fora do prazo')).toBeInTheDocument();
+    expect(screen.getByText('No prazo')).toBeInTheDocument();
+  });
+
   it('shows the 6-month score trend chart above the report list', async () => {
     vi.mocked(AuthContextModule.useAuth).mockReturnValue({ user: makeUser(), isLoading: false, login: vi.fn(), logout: vi.fn() });
     vi.mocked(reportsApi.listReportInstances).mockResolvedValueOnce([]);

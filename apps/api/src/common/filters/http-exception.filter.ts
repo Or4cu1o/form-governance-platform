@@ -12,6 +12,11 @@ interface ErrorEnvelope {
   statusCode: number;
   message: string | string[];
   error: string;
+  // Excecoes especificas (ex.: IndicatorVersionConflictException, FR-129)
+  // acrescentam campos proprios ao corpo — o filtro normaliza message/error
+  // mas nao pode descarta-los, senao o cliente perde o dado que motivou o
+  // 409 (o valor vencedor, autor e instante).
+  [key: string]: unknown;
 }
 
 const REASON_PT_BR: Record<number, string> = {
@@ -69,12 +74,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (typeof body === 'string') {
       return { statusCode: status, message: body, error: reasonFor(status) };
     }
-    const { message, error } = body as { message?: string | string[]; error?: string };
+    const { message, error, ...rest } = body as { message?: string | string[]; error?: string; [key: string]: unknown };
     const preservedError = error && !DEFAULT_ENGLISH_REASONS.has(error) ? error : reasonFor(status);
     return {
       statusCode: status,
       message: message ?? reasonFor(status),
       error: preservedError,
+      ...rest,
     };
   }
 }
