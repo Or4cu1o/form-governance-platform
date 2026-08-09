@@ -4,6 +4,9 @@ set -e
 echo "[entrypoint] aplicando migrations pendentes (prisma migrate deploy)..."
 npx prisma migrate deploy --schema=./prisma/schema.prisma
 
+echo "[entrypoint] provisionando role de aplicacao (privilegio minimo, T035)..."
+npm run provision:app-role
+
 if [ "$SEED_ON_START" = "true" ]; then
   echo "[entrypoint] SEED_ON_START=true — rodando seed core..."
   node dist/prisma/seed.js

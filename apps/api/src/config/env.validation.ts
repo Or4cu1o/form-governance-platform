@@ -21,6 +21,13 @@ const REQUIRED_ENV_VARS = [
   // (T032), e requisicao com credencial e incompativel com CORS curinga —
   // sem esta variavel nao ha modo aberto de fallback possivel.
   'CORS_ORIGIN',
+  // Conexao de runtime da aplicacao pela role de privilegio minimo
+  // "formops_app" (T035) — distinta de DATABASE_URL, usada so por
+  // migracao/seed (role "formops", dona das tabelas). PrismaService le
+  // esta variavel diretamente; sem ela a API nao teria como saber que
+  // role usar e cairia de volta silenciosamente para a role dona,
+  // esvaziando o REVOKE UPDATE/DELETE da migracao.
+  'APP_DATABASE_URL',
 ] as const;
 
 // Falha rapido na inicializacao se algum segredo/config obrigatorio nao

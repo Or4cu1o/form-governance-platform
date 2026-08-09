@@ -15,6 +15,7 @@ describe('validateEnv', () => {
     CLAMAV_HOST: 'clamav',
     CLAMAV_PORT: '3310',
     CORS_ORIGIN: 'http://localhost:7443',
+    APP_DATABASE_URL: 'postgresql://formops_app:pass@localhost:5432/db',
   };
 
   test('returns the config unchanged when every required variable is present', () => {
@@ -43,6 +44,7 @@ describe('validateEnv', () => {
         'CLAMAV_HOST',
         'CLAMAV_PORT',
         'CORS_ORIGIN',
+        'APP_DATABASE_URL',
       ].join(', '),
     );
   });
@@ -60,6 +62,7 @@ describe('validateEnv', () => {
     'CLAMAV_HOST',
     'CLAMAV_PORT',
     'CORS_ORIGIN',
+    'APP_DATABASE_URL',
   ] as const)('throws when %s is missing', (key) => {
     const withoutKey: Record<string, string> = { ...validConfig };
     delete withoutKey[key];

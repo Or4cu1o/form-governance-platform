@@ -61,6 +61,14 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   autenticação, bem-sucedida ou não (FR-073).
 - `apps/web/src/lib/csrf.ts`: lê o cookie CSRF via `document.cookie` e o expõe para `api-client.ts`
   ecoar no header das requisições de escrita.
+- Role de banco `formops_app` (T035), privilégio mínimo — sem posse de tabela, sem `UPDATE`/`DELETE`
+  em `indicator_response_version`, `validation_records`, `audit.audit_logs`, `audit.access_log`,
+  `export_seal` e `export_seal_revocation`. `apps/api/scripts/provision-app-role.ts` provisiona
+  `LOGIN`/senha fora da migração versionada (mesmo padrão de `tableau_ro`, T020), chamado por
+  `scripts/manage.js` e `apps/api/docker-entrypoint.sh` após `prisma migrate deploy`.
+- `apps/api/src/prisma/append-only.spec.ts` e `no-physical-delete.spec.ts` (T036/T037): provam a
+  recusa por privilégio nas seis tabelas append-only e a ausência de rota `DELETE` para usuário,
+  unidade e evidência (FR-047, FR-067, FR-070).
 
 ### Changed
 
@@ -89,6 +97,10 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
   `env.validation.ts` (falha no boot se ausente) e `main.ts` sempre define `credentials: true` —
   requisição com cookie de sessão é incompatível com `Access-Control-Allow-Origin: *` (T171,
   concluída junto com T032 por ser pré-requisito funcional dela, não tarefa separada).
+- `apps/api/src/prisma/prisma.service.ts` conecta via `APP_DATABASE_URL` (role `formops_app`) em vez
+  de `DATABASE_URL` (role `formops`, dona das tabelas, agora reservada a migração/seed) — sem essa
+  troca o `REVOKE` de T035 não protegeria nada em runtime, já que toda escrita da aplicação passa por
+  este client. `APP_DATABASE_URL` virou obrigatória em `env.validation.ts`.
 
 ### Fixed
 
@@ -111,10 +123,11 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
 
 - **Fase 1 — Setup** (T001-T009): concluída. `multiSchema`, dependências de selagem/antivírus,
   custódia de chave, provisionamento de buckets.
-- **Fase 2 — Foundational** (T010-T040): em andamento. Correções de modelo e entidades novas
+- **Fase 2 — Foundational** (T010-T040): quase concluída. Correções de modelo e entidades novas
   aplicadas (T010-T019); migrações SQL aplicadas e verificadas contra Postgres real (T020-T025);
   contexto e trilha de auditoria completos (T026-T030a); sessão em cookie concluída (T031-T034);
-  revogação de DML pendente (T035-T037).
+  revogação de DML concluída (T035-T037, com segregação de role `formops_app`); restam T039-T040
+  (transversais).
 - **Fase 12 — Convergência** (T166-T171): T166 e T167 concluídas junto com a Fase 2 (mesma correção,
   dois ângulos, conforme recomendado); T171 concluída junto com T032 (pré-requisito funcional, não
   tarefa separada). T168-T170 pendentes.

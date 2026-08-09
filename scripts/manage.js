@@ -53,6 +53,10 @@ function loadEnv() {
   // VITE_API_URL, DATABASE_URL e S3_ENDPOINT sao derivadas em vez de mantidas separadas, evitando desalinhamento
   process.env.VITE_API_URL = process.env.VITE_API_URL || `http://localhost:${process.env.API_PORT}`;
   process.env.DATABASE_URL = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
+  // Role de aplicacao "formops_app" (T035), privilegio minimo — distinta da
+  // role de migracao/seed acima (DATABASE_URL). Provisionada por
+  // waitAndProvisionAppRole() apos a migracao, antes da API subir.
+  process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || `postgresql://formops_app:${process.env.APP_DB_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
   process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || `http://localhost:${process.env.MINIO_API_PORT}`;
   // CORS_ORIGIN (T171) e obrigatoria no boot da API (env.validation.ts) — cai
   // aqui para um .env pre-existente que ainda nao tem a linha.
@@ -298,6 +302,16 @@ async function waitAndMigrateDb() {
   run('npm run prisma:generate --workspace=apps/api');
 }
 
+// Provisionar LOGIN/senha da role de aplicacao "formops_app" (T035): a
+// migracao ja criou a role e os GRANT/REVOKE, mas login e senha sao segredo
+// e por isso ficam fora do SQL versionado (mesmo motivo de tableau_ro em
+// T020). Roda so depois que a migracao aplicou (a role precisa existir).
+function provisionAppRole() {
+  console.log(`${YELLOW}Provisionando role de aplicacao (privilegio minimo, formops_app)...${RESET}`);
+  run('npm run provision:app-role --workspace=apps/api');
+  console.log(`${GREEN}✓ Role de aplicacao provisionada!${RESET}`);
+}
+
 // Aguardar MinIO e provisionar os buckets com Object Lock (T007/T008):
 // o lock so pode ser habilitado na criacao do bucket, entao isto roda
 // antes da API subir, nunca sob demanda no primeiro upload.
@@ -447,6 +461,7 @@ async function commandStart() {
   }
 
   await waitAndMigrateDb();
+  provisionAppRole();
   await waitAndProvisionBuckets();
 
   if (!isFlush) {
@@ -516,6 +531,7 @@ async function commandRestart() {
     run(`${DOCKER_COMPOSE} restart`, { ignoreError: true });
   }
   await waitAndMigrateDb();
+  provisionAppRole();
   await waitAndProvisionBuckets();
 
   if (process.env.SEED_ON_START === 'true' || process.env.NODE_ENV === 'development') {
@@ -551,6 +567,7 @@ async function commandDeploy(withSeeds = false) {
   }
 
   await waitAndMigrateDb();
+  provisionAppRole();
   await waitAndProvisionBuckets();
   console.log('\nExecutando carga de dados de seed (Admin + Usuários de Teste Dev)...');
   run('npm run seed --workspace=apps/api');

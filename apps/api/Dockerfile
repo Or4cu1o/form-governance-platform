@@ -20,6 +20,8 @@ COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /workspace/apps/api/dist ./apps/api/dist
 COPY --from=build /workspace/apps/api/prisma ./apps/api/prisma
+COPY --from=build /workspace/apps/api/scripts ./apps/api/scripts
+COPY --from=build /workspace/apps/api/tsconfig.json ./apps/api/tsconfig.json
 COPY apps/api/docker-entrypoint.sh /workspace/docker-entrypoint.sh
 RUN chmod +x /workspace/docker-entrypoint.sh
 WORKDIR /workspace/apps/api
