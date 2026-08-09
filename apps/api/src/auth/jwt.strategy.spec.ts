@@ -16,6 +16,7 @@ describe('JwtStrategy', () => {
     email: 'teste@formops.local',
     passwordHash: 'hashed-password',
     role: RoleName.ELABORADOR,
+    jobTitle: 'Chefe de Gabinete',
     primaryUnitId: 'unit-1',
   };
 
@@ -26,6 +27,9 @@ describe('JwtStrategy', () => {
     strategy = new JwtStrategy(configService, usersService);
   });
 
+  // T093/US5-1/US5-3: findActiveById filtra isActive:true e a estrategia
+  // roda a cada requisicao (nenhum cache sobrevive) — desativar um usuario ou
+  // revogar seu vinculo tem efeito imediato na proxima chamada autenticada.
   test('throws UnauthorizedException when the JWT subject no longer maps to an active user', async () => {
     findActiveByIdMock.mockResolvedValue(null);
 
@@ -47,6 +51,7 @@ describe('JwtStrategy', () => {
       sobrenome: dbUser.sobrenome,
       email: dbUser.email,
       role: dbUser.role,
+      jobTitle: dbUser.jobTitle,
       primaryUnitId: dbUser.primaryUnitId,
     });
     expect(result).not.toHaveProperty('passwordHash');

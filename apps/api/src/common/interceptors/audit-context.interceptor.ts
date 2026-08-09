@@ -52,10 +52,9 @@ export class AuditContextInterceptor implements NestInterceptor {
       origin: ORIGIN_WEB,
       requestId: (Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader) ?? randomUUID(),
       actorNameSnapshot: user ? `${user.nome} ${user.sobrenome}`.trim() : null,
-      // Cargo funcional ainda nao esta disponivel em AuthenticatedUser
-      // (User.jobTitle existe no schema desde T011, mas so passa a ser
-      // populado por T095) — nao inventar valor ate la (T169).
-      actorJobTitleSnapshot: null,
+      // T095: AuthenticatedUser passa a carregar jobTitle (JwtStrategy) — o
+      // snapshot deixa de ser sempre nulo (lacuna documentada em T169).
+      actorJobTitleSnapshot: user?.jobTitle ?? null,
       actorRoleSnapshot: user?.role ?? null,
       actorUnitSnapshot: user?.primaryUnit?.sigla ?? user?.primaryUnitId ?? null,
     };

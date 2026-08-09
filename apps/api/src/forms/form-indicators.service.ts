@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFormIndicatorDto } from './dto/create-form-indicator.dto';
 import { UpdateFormIndicatorDto } from './dto/update-form-indicator.dto';
@@ -11,7 +12,10 @@ const SCORE_SUM_TOLERANCE = 0.01;
 
 @Injectable()
 export class FormIndicatorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditContextService: AuditContextService,
+  ) {}
 
   async create(formTopicId: string, dto: CreateFormIndicatorDto) {
     const topic = await this.prisma.formTopic.findUnique({ where: { id: formTopicId } });
@@ -20,9 +24,9 @@ export class FormIndicatorsService {
     }
     validateFormulaExpression(dto.formulaExpression, dto.variableKeys);
 
-    const indicator = await this.prisma.formIndicator.create({
-      data: { ...dto, formTopicId },
-    });
+    const indicator = await this.auditContextService.runWithAuditContext((tx) =>
+      tx.formIndicator.create({ data: { ...dto, formTopicId } }),
+    );
     const weightRebalance = await this.buildProposedRedistribution(topic.formTemplateId);
     return { indicator, weightRebalance };
   }
@@ -34,12 +38,16 @@ export class FormIndicatorsService {
     const nextFormula = dto.formulaExpression ?? indicator.formulaExpression;
     validateFormulaExpression(nextFormula, nextVariableKeys);
 
-    return this.prisma.formIndicator.update({ where: { id }, data: dto });
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.formIndicator.update({ where: { id }, data: dto }),
+    );
   }
 
   async setActive(id: string, isActive: boolean) {
     const indicator = await this.ensureExists(id);
-    const updated = await this.prisma.formIndicator.update({ where: { id }, data: { isActive } });
+    const updated = await this.auditContextService.runWithAuditContext((tx) =>
+      tx.formIndicator.update({ where: { id }, data: { isActive } }),
+    );
 
     // T085: ativar/inativar altera o conjunto de indicadores ativos, o que
     // pode desbalancear a soma dos pesos — propoe a redistribuicao (sem
@@ -85,14 +93,14 @@ export class FormIndicatorsService {
       );
     }
 
-    await this.prisma.$transaction(
-      dto.weights.map((entry) =>
-        this.prisma.formIndicator.update({
+    await this.auditContextService.runWithAuditContext(async (tx) => {
+      for (const entry of dto.weights) {
+        await tx.formIndicator.update({
           where: { id: entry.indicatorId },
           data: { scoreWeight: entry.scoreWeight },
-        }),
-      ),
-    );
+        });
+      }
+    });
 
     const updated = await this.findActiveIndicators(formTemplateId);
     return this.buildScoreSummary(updated);
@@ -105,14 +113,14 @@ export class FormIndicatorsService {
     }
 
     const weights = distributeScoreWeights(indicators.length, TOTAL_SCORE_BUDGET);
-    await this.prisma.$transaction(
-      indicators.map((indicator, index) =>
-        this.prisma.formIndicator.update({
+    await this.auditContextService.runWithAuditContext(async (tx) => {
+      for (const [index, indicator] of indicators.entries()) {
+        await tx.formIndicator.update({
           where: { id: indicator.id },
           data: { scoreWeight: weights[index] },
-        }),
-      ),
-    );
+        });
+      }
+    });
 
     const updated = await this.findActiveIndicators(formTemplateId);
     return this.buildScoreSummary(updated);

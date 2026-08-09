@@ -17,6 +17,7 @@ const existingUser: AdminUser = {
   sobrenome: 'Silva',
   email: 'ana@example.com',
   role: 'ELABORADOR',
+  jobTitle: null,
   primaryUnitId: 'unit-1',
   isActive: true,
   primaryUnit: units[0],
@@ -69,6 +70,46 @@ describe('UserFormModal', () => {
       primaryUnitId: 'unit-1',
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // T095/FR-074: cargo funcional obrigatorio para o perfil Aprovador — e
+  // estampado no documento selado quando o veredito e emitido.
+  it('requires a jobTitle when the role is Aprovador', async () => {
+    renderWithProviders(<UserFormModal isOpen onClose={vi.fn()} units={units} />);
+
+    fireEvent.change(screen.getByLabelText(/^Matrícula/), { target: { value: '002' } });
+    fireEvent.change(screen.getByLabelText(/^E-mail/), { target: { value: 'novo@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^Nome/), { target: { value: 'João' } });
+    fireEvent.change(screen.getByLabelText(/^Sobrenome/), { target: { value: 'Souza' } });
+    fireEvent.change(screen.getByLabelText(/^Role/), { target: { value: 'APROVADOR' } });
+    fireEvent.change(screen.getByLabelText(/Senha provisória/), { target: { value: 'senha-forte' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar usuário' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Informe o cargo');
+    expect(usersApi.createUser).not.toHaveBeenCalled();
+  });
+
+  it('creates an Aprovador once the jobTitle is provided', async () => {
+    vi.mocked(usersApi.createUser).mockResolvedValueOnce({ ...existingUser, role: 'APROVADOR' });
+
+    renderWithProviders(<UserFormModal isOpen onClose={vi.fn()} units={units} />);
+
+    fireEvent.change(screen.getByLabelText(/^Matrícula/), { target: { value: '002' } });
+    fireEvent.change(screen.getByLabelText(/^E-mail/), { target: { value: 'novo@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^Nome/), { target: { value: 'João' } });
+    fireEvent.change(screen.getByLabelText(/^Sobrenome/), { target: { value: 'Souza' } });
+    fireEvent.change(screen.getByLabelText(/^Role/), { target: { value: 'APROVADOR' } });
+    fireEvent.change(screen.getByLabelText(/^Cargo/), { target: { value: 'Chefe de Gabinete' } });
+    fireEvent.change(screen.getByLabelText(/Senha provisória/), { target: { value: 'senha-forte' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Criar usuário' }));
+    });
+
+    expect(usersApi.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'APROVADOR', jobTitle: 'Chefe de Gabinete' }),
+    );
   });
 
   it('does not render a password field and does not require one when editing', async () => {

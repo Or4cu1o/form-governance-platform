@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormTopicsService } from './form-topics.service';
 
@@ -16,9 +17,15 @@ describe('FormTopicsService', () => {
     updateMock = jest.fn();
     const prisma = {
       formTemplate: { findUnique: findUniqueTemplateMock },
-      formTopic: { create: createMock, findUnique: findUniqueTopicMock, update: updateMock },
+      formTopic: { findUnique: findUniqueTopicMock },
     } as unknown as PrismaService;
-    service = new FormTopicsService(prisma);
+    const runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
+      fn({ formTopic: { create: createMock, update: updateMock } }),
+    );
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new FormTopicsService(prisma, auditContextService);
   });
 
   describe('create', () => {

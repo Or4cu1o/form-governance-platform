@@ -58,5 +58,21 @@ describe('UnitAccessService', () => {
         ForbiddenException,
       );
     });
+
+    // T092/US5-3/quickstart V15: revogar um acesso extra produz perda de
+    // visibilidade imediata, sem intervalo de tolerancia — o service consulta
+    // userUnitAccess diretamente a cada chamada (sem cache/memoizacao), entao
+    // a proxima chamada apos a revogacao ja reflete o novo estado.
+    test('loses access on the very next call after the grant is revoked, without any tolerance window', async () => {
+      const user = buildUser(RoleName.OBSERVADOR);
+
+      findManyMock.mockResolvedValueOnce([{ unitId: 'unit-extra' }]);
+      await expect(service.assertReadAccess('unit-extra', user)).resolves.toBeUndefined();
+
+      findManyMock.mockResolvedValueOnce([]);
+      await expect(service.assertReadAccess('unit-extra', user)).rejects.toThrow(ForbiddenException);
+
+      expect(findManyMock).toHaveBeenCalledTimes(2);
+    });
   });
 });

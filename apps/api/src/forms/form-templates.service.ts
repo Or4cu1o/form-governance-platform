@@ -1,14 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFormTemplateDto } from './dto/create-form-template.dto';
 import { UpdateFormTemplateDto } from './dto/update-form-template.dto';
 
 @Injectable()
 export class FormTemplatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditContextService: AuditContextService,
+  ) {}
 
   create(dto: CreateFormTemplateDto) {
-    return this.prisma.formTemplate.create({ data: dto });
+    return this.auditContextService.runWithAuditContext((tx) => tx.formTemplate.create({ data: dto }));
   }
 
   findAll(includeInactive: boolean) {
@@ -43,12 +47,16 @@ export class FormTemplatesService {
 
   async update(id: string, dto: UpdateFormTemplateDto) {
     await this.ensureExists(id);
-    return this.prisma.formTemplate.update({ where: { id }, data: dto });
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.formTemplate.update({ where: { id }, data: dto }),
+    );
   }
 
   async setActive(id: string, isActive: boolean) {
     await this.ensureExists(id);
-    return this.prisma.formTemplate.update({ where: { id }, data: { isActive } });
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.formTemplate.update({ where: { id }, data: { isActive } }),
+    );
   }
 
   private async ensureExists(id: string) {

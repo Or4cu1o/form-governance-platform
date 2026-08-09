@@ -15,10 +15,10 @@ import { ReportLifecycleService } from './report-lifecycle.service';
 // do teste roda dentro de runAsSystemActor.
 describe('ReportLifecycleService (integration)', () => {
   const prisma = new PrismaService();
-  const platformSettingsService = new PlatformSettingsService(prisma);
   const auditContextService = new AuditContextService(prisma);
+  const platformSettingsService = new PlatformSettingsService(prisma, auditContextService);
   const inheritanceService = new InheritanceService();
-  const formIndicatorsService = new FormIndicatorsService(prisma);
+  const formIndicatorsService = new FormIndicatorsService(prisma, auditContextService);
   const service = new ReportLifecycleService(
     prisma,
     platformSettingsService,

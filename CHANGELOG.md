@@ -52,6 +52,23 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 - `EvidenceRetentionPanel.tsx`: diálogo dedicado, distinto do salvamento comum, para confirmar
   retenção de evidência indeterminada; aviso explícito de que reduzir a janela não libera o
   acervo já gravado (FR-042, FR-043).
+- `User.jobTitle` obrigatório para o role Aprovador (`CreateUserDto`/`UpdateUserDto`), estampado
+  no documento selado; `AuthenticatedUser`/`JwtStrategy`/`AuditContextInterceptor` passam a
+  carregar e registrar o cargo funcional no contexto de auditoria (FR-074, US5-5).
+- Campo "Cargo" em `UserFormModal.tsx`; descrição de `AdminAccessPage.tsx` reescrita em
+  linguagem simples deixando explícito que desativar nunca é excluir (US5-1, US5-2).
+
+### Fixed
+
+- **Crítico**: `UsersAdminService`, `UnitsAdminService`, `FormTemplatesService`,
+  `FormTopicsService`, `FormIndicatorsService` e `PlatformSettingsService` gravavam diretamente
+  via `PrismaService`, sem `AuditContextService.runWithAuditContext` — desde que o gatilho de
+  auditoria foi estendido a `users`, `units`, `user_unit_access`, `form_templates`, `form_topics`,
+  `form_indicators` e `system_settings`, toda escrita administrativa (criar/editar usuário,
+  unidade, formulário, tópico, indicador, parâmetros da plataforma) seria rejeitada pelo Postgres
+  real (`RAISE EXCEPTION ... app.origin nao definida`). Corrigido nos 6 services (US5-5, FR-069).
+
+### Added
 
 - `AuditContextService` (`AsyncLocalStorage`), substituindo `PrismaService.runWithAuditActor`:
   toda escrita auditada agora carrega contexto de requisição completo (usuário, IP, User-Agent,
@@ -268,3 +285,13 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   sete parâmetros novos de `SystemSetting` expostos (T087); catálogo administrável com criação
   embutida no cadastro de indicador (T088); diálogo dedicado de retenção indeterminada e aviso de
   não liberação ao reduzir a janela (T090/T091).
+- **Fase 7 — US5 (P5)** (T092-T098): concluída. Revogação de acesso e desativação de usuário já
+  tinham efeito imediato por construção — `UnitAccessService`/`JwtStrategy` nunca cachearam nada,
+  T092/T096 apenas formalizam isso em teste; `jobTitle` obrigatório para o role Aprovador
+  (T095), com revalidação no `update` porque `PartialType` torna o campo sempre opcional no DTO;
+  cargo funcional e mensagem explícita de que desativar não é excluir no frontend (T098). Achado
+  crítico fora do escopo literal da fase: o gatilho de auditoria estendido na Fase 12 (T167)
+  passou a rejeitar qualquer escrita administrativa sem `AuditContextService.runWithAuditContext`
+  — nenhum dos 6 services afetados (`admin/`, `forms/`, `export/platform-settings.service.ts`) o
+  usava; corrigido nesta fase (T097) por ser o mesmo mecanismo que grava autor/data/valor
+  anterior/novo exigido pelo cenário US5-5.

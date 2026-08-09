@@ -8,6 +8,7 @@ export interface CreateUserInput {
   email: string;
   password: string;
   role: RoleName;
+  jobTitle?: string;
   primaryUnitId: string;
   extraUnitIds?: string[];
 }

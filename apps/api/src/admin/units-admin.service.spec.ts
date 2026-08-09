@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma, UnitLevel } from '@prisma/client';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UnitsAdminService } from './units-admin.service';
@@ -19,6 +20,7 @@ describe('UnitsAdminService', () => {
   let createMock: jest.Mock;
   let updateMock: jest.Mock;
   let assertBalancedMock: jest.Mock;
+  let runWithAuditContextMock: jest.Mock;
 
   beforeEach(() => {
     findManyMock = jest.fn();
@@ -27,10 +29,16 @@ describe('UnitsAdminService', () => {
     updateMock = jest.fn();
     assertBalancedMock = jest.fn().mockResolvedValue(undefined);
     const prisma = {
-      unit: { findMany: findManyMock, findUnique: findUniqueMock, create: createMock, update: updateMock },
+      unit: { findMany: findManyMock, findUnique: findUniqueMock },
     } as unknown as PrismaService;
     const formIndicatorsService = { assertBalanced: assertBalancedMock } as unknown as FormIndicatorsService;
-    service = new UnitsAdminService(prisma, formIndicatorsService);
+    runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
+      fn({ unit: { create: createMock, update: updateMock } }),
+    );
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new UnitsAdminService(prisma, formIndicatorsService, auditContextService);
   });
 
   test('findAll filters by isActive unless includeInactive is set', async () => {
@@ -128,5 +136,22 @@ describe('UnitsAdminService', () => {
 
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'unit-1' }, data: { isActive: false } });
     });
+  });
+
+  // T094/US5-5: toda alteracao administrativa passa por runWithAuditContext,
+  // o que ativa o gatilho fn_write_audit_log (T167) — e ele quem grava autor,
+  // data e os valores anterior/novo em audit.audit_logs a partir do UPDATE.
+  test('routes create, update and setActive through the audited transaction', async () => {
+    createMock.mockResolvedValue({ id: 'unit-9' });
+    await service.create({ sigla: 'FIL09', nome: 'Filial Nove', level: UnitLevel.B });
+    expect(runWithAuditContextMock).toHaveBeenCalledTimes(1);
+
+    findUniqueMock.mockResolvedValue({ id: 'unit-9' });
+    updateMock.mockResolvedValue({ id: 'unit-9', nome: 'Renomeada' });
+    await service.update('unit-9', { nome: 'Renomeada' });
+    expect(runWithAuditContextMock).toHaveBeenCalledTimes(2);
+
+    await service.setActive('unit-9', false);
+    expect(runWithAuditContextMock).toHaveBeenCalledTimes(3);
   });
 });

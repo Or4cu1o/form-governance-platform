@@ -27,14 +27,35 @@ export function UserFormModal({ isOpen, onClose, units, user }: Props) {
   const [email, setEmail] = useState(user?.email ?? '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<RoleName>(user?.role ?? 'OBSERVADOR');
+  const [jobTitle, setJobTitle] = useState(user?.jobTitle ?? '');
   const [primaryUnitId, setPrimaryUnitId] = useState(user?.primaryUnitId ?? units[0]?.id ?? '');
   const [error, setError] = useState<string | null>(null);
+
+  const requiresJobTitle = role === 'APROVADOR';
+  const trimmedJobTitle = jobTitle.trim();
 
   const mutation = useMutation({
     mutationFn: () =>
       isEditing
-        ? updateUser(user!.id, { matricula, nome, sobrenome, email, role, primaryUnitId })
-        : createUser({ matricula, nome, sobrenome, email, password, role, primaryUnitId }),
+        ? updateUser(user!.id, {
+            matricula,
+            nome,
+            sobrenome,
+            email,
+            role,
+            primaryUnitId,
+            ...(trimmedJobTitle && { jobTitle: trimmedJobTitle }),
+          })
+        : createUser({
+            matricula,
+            nome,
+            sobrenome,
+            email,
+            password,
+            role,
+            primaryUnitId,
+            ...(trimmedJobTitle && { jobTitle: trimmedJobTitle }),
+          }),
     onSuccess: () => {
       showToast(isEditing ? 'Usuário atualizado.' : 'Usuário criado.', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -52,6 +73,12 @@ export function UserFormModal({ isOpen, onClose, units, user }: Props) {
     }
     if (!isEditing && password.length < MIN_PASSWORD_LENGTH) {
       setError(`A senha deve ter ao menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+      return;
+    }
+    // T095/FR-074: cargo funcional obrigatorio para quem pode aprovar — e
+    // estampado no documento selado quando o veredito e emitido.
+    if (requiresJobTitle && !trimmedJobTitle) {
+      setError('Informe o cargo — obrigatório para o perfil Aprovador.');
       return;
     }
     mutation.mutate();
@@ -84,6 +111,15 @@ export function UserFormModal({ isOpen, onClose, units, user }: Props) {
               </option>
             ))}
           </Select>
+        </Field>
+
+        <Field
+          label="Cargo"
+          htmlFor="jobTitle"
+          required={requiresJobTitle}
+          hint={requiresJobTitle ? 'Obrigatório para o perfil Aprovador — estampado no documento selado.' : undefined}
+        >
+          <Input id="jobTitle" value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} />
         </Field>
 
         <Field label="Unidade primária" htmlFor="primaryUnitId" required>

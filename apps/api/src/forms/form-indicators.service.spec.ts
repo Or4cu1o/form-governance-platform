@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { GoalOperator } from '@prisma/client';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormIndicatorsService } from './form-indicators.service';
 
@@ -11,7 +12,7 @@ describe('FormIndicatorsService', () => {
   let updateMock: jest.Mock;
   let findUniqueTemplateMock: jest.Mock;
   let findManyIndicatorMock: jest.Mock;
-  let transactionMock: jest.Mock;
+  let runWithAuditContextMock: jest.Mock;
 
   const validDto = {
     title: 'Chamados: Backlog',
@@ -30,19 +31,21 @@ describe('FormIndicatorsService', () => {
     updateMock = jest.fn();
     findUniqueTemplateMock = jest.fn();
     findManyIndicatorMock = jest.fn();
-    transactionMock = jest.fn().mockImplementation((ops: unknown[]) => Promise.all(ops));
     const prisma = {
       formTopic: { findUnique: findUniqueTopicMock },
       formTemplate: { findUnique: findUniqueTemplateMock },
       formIndicator: {
-        create: createMock,
         findUnique: findUniqueIndicatorMock,
         findMany: findManyIndicatorMock,
-        update: updateMock,
       },
-      $transaction: transactionMock,
     } as unknown as PrismaService;
-    service = new FormIndicatorsService(prisma);
+    runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
+      fn({ formIndicator: { create: createMock, update: updateMock } }),
+    );
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new FormIndicatorsService(prisma, auditContextService);
   });
 
   describe('create', () => {
@@ -240,7 +243,7 @@ describe('FormIndicatorsService', () => {
       await expect(
         service.updateScores('template-1', { weights: [{ indicatorId: 'ind-other', scoreWeight: 10 }] }),
       ).rejects.toThrow(BadRequestException);
-      expect(transactionMock).not.toHaveBeenCalled();
+      expect(runWithAuditContextMock).not.toHaveBeenCalled();
     });
 
     test('rejects when the sum of weights is not 10', async () => {
@@ -257,7 +260,7 @@ describe('FormIndicatorsService', () => {
           ],
         }),
       ).rejects.toThrow(BadRequestException);
-      expect(transactionMock).not.toHaveBeenCalled();
+      expect(runWithAuditContextMock).not.toHaveBeenCalled();
     });
 
     test('persists the weights when they cover the active set and sum to 10', async () => {
@@ -278,7 +281,7 @@ describe('FormIndicatorsService', () => {
         ],
       });
 
-      expect(transactionMock).toHaveBeenCalled();
+      expect(runWithAuditContextMock).toHaveBeenCalled();
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'ind-1' }, data: { scoreWeight: 3 } });
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'ind-2' }, data: { scoreWeight: 7 } });
       expect(result.sum).toBe(10);

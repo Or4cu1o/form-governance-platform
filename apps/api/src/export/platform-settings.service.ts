@@ -1,17 +1,21 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePlatformSettingsDto } from './dto/update-platform-settings.dto';
 
 @Injectable()
 export class PlatformSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditContextService: AuditContextService,
+  ) {}
 
   async getSettings() {
     const existing = await this.prisma.systemSetting.findFirst();
     if (existing) {
       return existing;
     }
-    return this.prisma.systemSetting.create({ data: {} });
+    return this.auditContextService.runWithAuditContext((tx) => tx.systemSetting.create({ data: {} }));
   }
 
   async updateSettings(dto: UpdatePlatformSettingsDto) {
@@ -26,29 +30,35 @@ export class PlatformSettingsService {
       );
     }
 
-    return this.prisma.systemSetting.update({
-      where: { id: settings.id },
-      data: {
-        ...(dto.exportNamingPattern !== undefined && { exportNamingPattern: dto.exportNamingPattern }),
-        ...(dto.slaElaborationBusinessDay !== undefined && {
-          slaElaborationBusinessDay: dto.slaElaborationBusinessDay,
-        }),
-        ...(dto.slaReviewBusinessDay !== undefined && { slaReviewBusinessDay: dto.slaReviewBusinessDay }),
-        ...(dto.slaApprovalBusinessDay !== undefined && { slaApprovalBusinessDay: dto.slaApprovalBusinessDay }),
-        ...(dto.slaReprovalExtensionDays !== undefined && {
-          slaReprovalExtensionDays: dto.slaReprovalExtensionDays,
-        }),
-        ...(dto.slaDeflatorScore !== undefined && { slaDeflatorScore: dto.slaDeflatorScore }),
-        ...(dto.evidenceRetentionYears !== undefined && { evidenceRetentionYears: dto.evidenceRetentionYears }),
-        ...(dto.includeOptionalHolidays !== undefined && { includeOptionalHolidays: dto.includeOptionalHolidays }),
-        ...(dto.auditMaxRangeMonths !== undefined && { auditMaxRangeMonths: dto.auditMaxRangeMonths }),
-        ...(dto.auditDetailedMaxRangeMonths !== undefined && {
-          auditDetailedMaxRangeMonths: dto.auditDetailedMaxRangeMonths,
-        }),
-        ...(dto.auditExactCountThreshold !== undefined && { auditExactCountThreshold: dto.auditExactCountThreshold }),
-        ...(dto.outlierRule !== undefined && { outlierRule: dto.outlierRule }),
-        ...(dto.forensicHoldYears !== undefined && { forensicHoldYears: dto.forensicHoldYears }),
-      },
-    });
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.systemSetting.update({
+        where: { id: settings.id },
+        data: {
+          ...(dto.exportNamingPattern !== undefined && { exportNamingPattern: dto.exportNamingPattern }),
+          ...(dto.slaElaborationBusinessDay !== undefined && {
+            slaElaborationBusinessDay: dto.slaElaborationBusinessDay,
+          }),
+          ...(dto.slaReviewBusinessDay !== undefined && { slaReviewBusinessDay: dto.slaReviewBusinessDay }),
+          ...(dto.slaApprovalBusinessDay !== undefined && { slaApprovalBusinessDay: dto.slaApprovalBusinessDay }),
+          ...(dto.slaReprovalExtensionDays !== undefined && {
+            slaReprovalExtensionDays: dto.slaReprovalExtensionDays,
+          }),
+          ...(dto.slaDeflatorScore !== undefined && { slaDeflatorScore: dto.slaDeflatorScore }),
+          ...(dto.evidenceRetentionYears !== undefined && { evidenceRetentionYears: dto.evidenceRetentionYears }),
+          ...(dto.includeOptionalHolidays !== undefined && {
+            includeOptionalHolidays: dto.includeOptionalHolidays,
+          }),
+          ...(dto.auditMaxRangeMonths !== undefined && { auditMaxRangeMonths: dto.auditMaxRangeMonths }),
+          ...(dto.auditDetailedMaxRangeMonths !== undefined && {
+            auditDetailedMaxRangeMonths: dto.auditDetailedMaxRangeMonths,
+          }),
+          ...(dto.auditExactCountThreshold !== undefined && {
+            auditExactCountThreshold: dto.auditExactCountThreshold,
+          }),
+          ...(dto.outlierRule !== undefined && { outlierRule: dto.outlierRule }),
+          ...(dto.forensicHoldYears !== undefined && { forensicHoldYears: dto.forensicHoldYears }),
+        },
+      }),
+    );
   }
 }

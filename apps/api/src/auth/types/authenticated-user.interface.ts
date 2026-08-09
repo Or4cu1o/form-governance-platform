@@ -7,6 +7,7 @@ export interface AuthenticatedUser {
   sobrenome: string;
   email: string;
   role: RoleName;
+  jobTitle?: string | null;
   primaryUnitId: string;
   primaryUnit?: {
     id: string;

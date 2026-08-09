@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { FormIndicatorsService } from '../forms/form-indicators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUnitDto } from './dto/create-unit.dto';
@@ -10,6 +11,7 @@ export class UnitsAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly formIndicatorsService: FormIndicatorsService,
+    private readonly auditContextService: AuditContextService,
   ) {}
 
   findAll(includeInactive: boolean) {
@@ -36,7 +38,7 @@ export class UnitsAdminService {
       await this.formIndicatorsService.assertBalanced(dto.formTemplateId);
     }
     try {
-      return await this.prisma.unit.create({ data: dto });
+      return await this.auditContextService.runWithAuditContext((tx) => tx.unit.create({ data: dto }));
     } catch (error) {
       throw this.translateUniqueConstraintError(error);
     }
@@ -48,7 +50,7 @@ export class UnitsAdminService {
       await this.formIndicatorsService.assertBalanced(dto.formTemplateId);
     }
     try {
-      return await this.prisma.unit.update({ where: { id }, data: dto });
+      return await this.auditContextService.runWithAuditContext((tx) => tx.unit.update({ where: { id }, data: dto }));
     } catch (error) {
       throw this.translateUniqueConstraintError(error);
     }
@@ -56,7 +58,9 @@ export class UnitsAdminService {
 
   async setActive(id: string, isActive: boolean) {
     await this.ensureExists(id);
-    return this.prisma.unit.update({ where: { id }, data: { isActive } });
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.unit.update({ where: { id }, data: { isActive } }),
+    );
   }
 
   private async ensureExists(id: string) {

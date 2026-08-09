@@ -14,7 +14,7 @@ export function AdminAccessPage() {
       <PageHeader
         eyebrow="Administração"
         title="Controle de Acesso"
-        description="Gestão de usuários e unidades. Desligamentos usam soft delete."
+        description="Gestão de usuários e unidades. Desativar nunca é excluir: o histórico e a autoria de cada usuário ou unidade permanecem íntegros e consultáveis mesmo depois do desligamento."
       />
 
       <div className="bg-paper-raised px-8 pt-4">

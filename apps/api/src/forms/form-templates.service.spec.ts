@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormTemplatesService } from './form-templates.service';
 
@@ -15,9 +16,15 @@ describe('FormTemplatesService', () => {
     findUniqueMock = jest.fn();
     updateMock = jest.fn();
     const prisma = {
-      formTemplate: { create: createMock, findMany: findManyMock, findUnique: findUniqueMock, update: updateMock },
+      formTemplate: { findMany: findManyMock, findUnique: findUniqueMock },
     } as unknown as PrismaService;
-    service = new FormTemplatesService(prisma);
+    const runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
+      fn({ formTemplate: { create: createMock, update: updateMock } }),
+    );
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new FormTemplatesService(prisma, auditContextService);
   });
 
   test('create persists the given dto', async () => {

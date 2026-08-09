@@ -60,6 +60,9 @@ export interface AdminUser {
   sobrenome: string;
   email: string;
   role: RoleName;
+  // T095/FR-074: funcao na organizacao, obrigatoria para o role Aprovador —
+  // estampada no documento selado.
+  jobTitle: string | null;
   primaryUnitId: string;
   isActive: boolean;
   primaryUnit: UnitSummary;

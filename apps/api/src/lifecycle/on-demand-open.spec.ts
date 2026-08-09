@@ -25,9 +25,9 @@ import { ReportLifecycleService } from './report-lifecycle.service';
 describe('POST /report-instances/start-current (abertura sob demanda, integration)', () => {
   const prisma = new PrismaService();
   const auditContextService = new AuditContextService(prisma);
-  const platformSettingsService = new PlatformSettingsService(prisma);
+  const platformSettingsService = new PlatformSettingsService(prisma, auditContextService);
   const inheritanceService = new InheritanceService();
-  const formIndicatorsService = new FormIndicatorsService(prisma);
+  const formIndicatorsService = new FormIndicatorsService(prisma, auditContextService);
   const reportLifecycleService = new ReportLifecycleService(
     prisma,
     platformSettingsService,

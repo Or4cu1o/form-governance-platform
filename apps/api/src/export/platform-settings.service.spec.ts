@@ -1,3 +1,4 @@
+import { AuditContextService } from '../common/services/audit-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlatformSettingsService } from './platform-settings.service';
 
@@ -12,9 +13,15 @@ describe('PlatformSettingsService', () => {
     createMock = jest.fn();
     updateMock = jest.fn();
     const prisma = {
-      systemSetting: { findFirst: findFirstMock, create: createMock, update: updateMock },
+      systemSetting: { findFirst: findFirstMock },
     } as unknown as PrismaService;
-    service = new PlatformSettingsService(prisma);
+    const runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) =>
+      fn({ systemSetting: { create: createMock, update: updateMock } }),
+    );
+    const auditContextService = {
+      runWithAuditContext: runWithAuditContextMock,
+    } as unknown as AuditContextService;
+    service = new PlatformSettingsService(prisma, auditContextService);
   });
 
   const defaultSettings = {

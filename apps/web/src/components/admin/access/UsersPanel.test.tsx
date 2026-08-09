@@ -17,6 +17,7 @@ const user: AdminUser = {
   sobrenome: 'Silva',
   email: 'ana@example.com',
   role: 'ELABORADOR',
+  jobTitle: null,
   primaryUnitId: 'unit-1',
   isActive: true,
   primaryUnit: { id: 'unit-1', sigla: 'TI', nome: 'Tecnologia' },

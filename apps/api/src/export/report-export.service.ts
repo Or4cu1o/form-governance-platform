@@ -106,11 +106,11 @@ export class ReportExportService {
       rodape: {
         veredictoFinal:
           VEREDICTO_BY_STATUS[report.status] + (reprovadoPendenteCorrecao ? ' (reprovado pela Matriz)' : ''),
-        // T169 — cargo funcional (User.jobTitle), nao o papel de acesso
-        // (User.role). T095 (tela de admin para preencher jobTitle) ainda
-        // nao existe, entao o campo fica ausente para aprovadores sem
-        // jobTitle cadastrado: um documento selado que declara cargo errado
-        // e pior que um que nao declara cargo.
+        // T169/T095 — cargo funcional (User.jobTitle), nao o papel de acesso
+        // (User.role). DTO exige jobTitle para novos usuarios com role
+        // Aprovador, mas registros anteriores a T095 podem nao te-lo — o
+        // campo fica ausente nesse caso: um documento selado que declara
+        // cargo errado e pior que um que nao declara cargo.
         aprovadorResponsavel: mostRecent
           ? {
               nome: mostRecent.aprovadorUser.nome,
