@@ -57,6 +57,11 @@ function loadEnv() {
   // role de migracao/seed acima (DATABASE_URL). Provisionada por
   // waitAndProvisionAppRole() apos a migracao, antes da API subir.
   process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || `postgresql://formops_app:${process.env.APP_DB_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
+  // Role "tableau_ro" (T020/T151), privilegio minimo SELECT-only em
+  // "analytics" — usada pelo BI e pelos testes de integracao da camada
+  // analitica (apps/api/src/analytics/*.spec.ts). Provisionada por
+  // provisionTableauRo() apos a migracao, mesmo momento de provisionAppRole().
+  process.env.TABLEAU_RO_DATABASE_URL = process.env.TABLEAU_RO_DATABASE_URL || `postgresql://tableau_ro:${process.env.TABLEAU_RO_DB_PASSWORD}@localhost:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DB}`;
   process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || `http://localhost:${process.env.MINIO_API_PORT}`;
   // CORS_ORIGIN (T171) e obrigatoria no boot da API (env.validation.ts) — cai
   // aqui para um .env pre-existente que ainda nao tem a linha.
@@ -312,6 +317,15 @@ function provisionAppRole() {
   console.log(`${GREEN}✓ Role de aplicacao provisionada!${RESET}`);
 }
 
+// Provisionar LOGIN/senha da role somente-leitura "tableau_ro" (T020/T151):
+// a migracao ja criou a role e o GRANT SELECT em "analytics", login e senha
+// ficam fora do SQL versionado (mesmo motivo de formops_app acima).
+function provisionTableauRo() {
+  console.log(`${YELLOW}Provisionando role de BI (privilegio minimo, tableau_ro)...${RESET}`);
+  run('npm run provision:tableau-ro --workspace=apps/api');
+  console.log(`${GREEN}✓ Role de BI provisionada!${RESET}`);
+}
+
 // Aguardar MinIO e provisionar os buckets com Object Lock (T007/T008):
 // o lock so pode ser habilitado na criacao do bucket, entao isto roda
 // antes da API subir, nunca sob demanda no primeiro upload.
@@ -462,6 +476,7 @@ async function commandStart() {
 
   await waitAndMigrateDb();
   provisionAppRole();
+  provisionTableauRo();
   await waitAndProvisionBuckets();
 
   if (!isFlush) {
@@ -532,6 +547,7 @@ async function commandRestart() {
   }
   await waitAndMigrateDb();
   provisionAppRole();
+  provisionTableauRo();
   await waitAndProvisionBuckets();
 
   if (process.env.SEED_ON_START === 'true' || process.env.NODE_ENV === 'development') {
@@ -568,6 +584,7 @@ async function commandDeploy(withSeeds = false) {
 
   await waitAndMigrateDb();
   provisionAppRole();
+  provisionTableauRo();
   await waitAndProvisionBuckets();
   console.log('\nExecutando carga de dados de seed (Admin + Usuários de Teste Dev)...');
   run('npm run seed --workspace=apps/api');

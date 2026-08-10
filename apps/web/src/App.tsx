@@ -9,6 +9,7 @@ import { AdminFormsPage } from './pages/AdminFormsPage';
 import { AdminSettingsPage } from './pages/AdminSettingsPage';
 import { AuditPage } from './pages/AuditPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { EvidenceExpiredPage } from './pages/EvidenceExpiredPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ReportDetailPage } from './pages/ReportDetailPage';
@@ -25,6 +26,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           {/* T142/FR-102: rota publica, fora do guard de sessao — nenhum login exigido. */}
           <Route path="/verificar/:codigo" element={<VerifyPage />} />
+          {/* T155/US8: destino do resolver de evidencia — publica, sem login. */}
+          <Route path="/evidencia-expirada" element={<EvidenceExpiredPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>

@@ -7,6 +7,9 @@ npx prisma migrate deploy --schema=./prisma/schema.prisma
 echo "[entrypoint] provisionando role de aplicacao (privilegio minimo, T035)..."
 npm run provision:app-role
 
+echo "[entrypoint] provisionando role de BI (privilegio minimo, tableau_ro, T151)..."
+npm run provision:tableau-ro
+
 if [ "$SEED_ON_START" = "true" ]; then
   echo "[entrypoint] SEED_ON_START=true — rodando seed core..."
   node dist/prisma/seed.js

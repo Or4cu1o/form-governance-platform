@@ -15,6 +15,7 @@
     "seed:demo": "ts-node prisma/seed-demo.ts",
     "provision:buckets": "ts-node scripts/provision-buckets.ts",
     "provision:app-role": "ts-node scripts/provision-app-role.ts",
+    "provision:tableau-ro": "ts-node scripts/provision-tableau-ro.ts",
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",

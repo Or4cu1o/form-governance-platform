@@ -11,6 +11,18 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 
 ### Added
 
+- Camada analítica para BI (US8, T144-T156a): schema `analytics` com cinco views somente-leitura
+  (`v_report_fact`, `v_absence_semantics`, `v_indicator_dim`, `v_unit_dim`, `v_evidence_link`) e
+  `v_load_marker`, projetando o que o OLTP já decidiu — nenhuma recalcula nota, conformidade ou
+  meta. `v_report_fact` só expõe relatório `CONCLUIDO`, lê meta/peso/nota dos campos `snapshot*`
+  congelados. Role `tableau_ro` com `SELECT` **apenas** em `analytics`; a role da aplicação nunca
+  teve (e agora tem `REVOKE` explícito de) acesso à própria projeção. Resolver de evidência público
+  `GET /analytics/evidence/:token` (`apps/api/src/analytics/`) com token HMAC-SHA256 de uso único e
+  vida curta assinado em Node (`evidence-token.util.ts`, nunca no banco); token expirado, consumido
+  e inválido produzem a mesma resposta — redirecionamento para `EvidenceExpiredPage`, nunca erro
+  cru. `AnalyticsReloadService` (cron horário + chamada sob demanda) reemite tokens vencidos,
+  mantendo `v_evidence_link` sempre com um vínculo vigente. Provisionamento de `tableau_ro`
+  completado (`scripts/provision-tableau-ro.ts`, ausente desde T020).
 - Selagem e verificação pública de documento (US7, T120-T143): `apps/api/src/sealing/`
   (`canonical-serialization.ts` implementa o contrato `seal-v1` — ordem lexicográfica recursiva,
   escalas decimais fixas com arredondamento decimal-exato, ISO-8601 UTC, ausência como objeto
@@ -342,3 +354,12 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   sobre os bytes finais — nunca estampado no documento, serve só à checagem online de adulteração.
   `AccessLogService` migrou de `AuditModule` para `CommonModule` (`@Global()`) para quebrar uma
   dependência circular nova (`ExportModule` → `AccessLogService`, `AuditModule` → `ExportModule`).
+- **Fase 10 — US8 (P8)** (T144-T156a): concluída. Módulo novo `apps/api/src/analytics/`. Achado que
+  mudou a abordagem: o contrato pede token "HMAC-SHA256" no vínculo de evidência, mas uma `VIEW`
+  pura não pode manter estado de uso único/expiração — criada `evidence_access_tokens`
+  (`EvidenceAccessToken`), assinatura roda em Node, nunca no banco (o segredo jamais chega a
+  `tableau_ro`). `unit_level_at_period`/`v_unit_dim.unit_level` leem o nível **corrente** de `Unit`
+  (não há histórico de nível no modelo) — mesma simplificação já em vigor em
+  `audit-query.service.ts`, deliberada para preservar a paridade BI↔Auditoria de FR-122 em vez de
+  quebrá-la introduzindo histórico só de um lado. Rota real `/analytics/evidence/:token`, sem
+  prefixo `api/` — nenhum controller existente usa esse prefixo (não há `setGlobalPrefix`).

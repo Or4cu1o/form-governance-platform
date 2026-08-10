@@ -102,6 +102,24 @@ completa. Enquanto as views forem não materializadas, a "carga" é a própria l
 reflete o instante da consulta. Materializar é decisão posterior, condicionada a medição real de
 desempenho — a antecipação está explicitamente barrada em `research.md` (D11).
 
+### `analytics.v_load_marker` (T156)
+
+| Coluna | Regra |
+|---|---|
+| `loaded_at` | `now()` avaliado a cada `SELECT` — a view não é materializada, então o instante da carga é o instante da própria consulta |
+| `load_mode` | Literal `NAO_MATERIALIZADO` enquanto D11 não for revisitada |
+
+O **contrato** exposto ao painel (duas colunas, mesmo nome) é estável mesmo que a camada seja
+materializada no futuro: só a origem de `loaded_at` muda — do instante da consulta para o instante
+do último `REFRESH MATERIALIZED VIEW` — sem exigir nenhuma alteração no lado do painel.
+
+`AnalyticsReloadService` (`apps/api/src/analytics/analytics-reload.service.ts`) é a rotina de
+recarga prevista por este requisito. Hoje, sem materialização, o único estado real que a camada
+mantém fora da leitura direta é o token do resolver de evidência (uso único, vida curta) — a
+recarga reemite um token vigente para todo arquivo elegível sem token ativo, para que
+`v_evidence_link` nunca fique presa a um vínculo já consumido ou expirado. Roda por `@Cron`
+horário e pode ser chamada sob demanda (`reload()`).
+
 ## Testes obrigatórios
 
 - Relatório não concluído não aparece em nenhuma view.

@@ -486,8 +486,32 @@ model EvidenceFile {
   validationRecord  ValidationRecord?  @relation(fields: [validationRecordId], references: [id])
   uploadedByUser    User               @relation("EvidenceUploadedBy", fields: [uploadedByUserId], references: [id])
   deactivatedByUser User?              @relation("EvidenceDeactivatedBy", fields: [deactivatedByUserId], references: [id])
+  accessTokens      EvidenceAccessToken[]
 
   @@map("evidence_files")
+  @@schema("public")
+}
+
+// Token de uso unico e vida curta do resolver de evidencia exposto ao BI
+// (US8, FR-119/FR-120). HMAC-SHA256 assinado com EVIDENCE_RESOLVER_HMAC_SECRET
+// (evidence-token.util.ts) — o "token" gravado aqui e o texto completo
+// assinado (mesmo precedente de ExportSeal.verificationCode: ja
+// nao-enumeravel, nao precisa de hash adicional). consumedAt marca o uso
+// unico; expiresAt, a vida curta. Emitido/renovado por
+// AnalyticsReloadService (T156), nunca pela propria view (analytics.*
+// permanece somente leitura, sem logica de emissao dentro do SQL).
+model EvidenceAccessToken {
+  id              String    @id @default(uuid())
+  evidenceFileId  String    @map("evidence_file_id")
+  token           String    @unique
+  issuedAt        DateTime  @default(now()) @map("issued_at")
+  expiresAt       DateTime  @map("expires_at")
+  consumedAt      DateTime? @map("consumed_at")
+
+  evidenceFile EvidenceFile @relation(fields: [evidenceFileId], references: [id])
+
+  @@index([evidenceFileId])
+  @@map("evidence_access_tokens")
   @@schema("public")
 }
 
