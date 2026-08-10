@@ -207,8 +207,28 @@ model User {
   accessLogs               AccessLog[]                @relation("AccessLogActor")
   issuedSeals              ExportSeal[]               @relation("SealIssuedBy")
   revokedSeals             ExportSealRevocation[]     @relation("SealRevokedBy")
+  tablePreferences         UserTablePreference[]
 
   @@map("users")
+  @@schema("public")
+}
+
+// T119a/FR-090: ordenacao e visibilidade de coluna sao apresentacao, nunca
+// filtro — persistidas por usuario e por tabela, fora de qualquer caminho
+// de consulta/agregacao. Nao passa pelo gatilho de auditoria (nao e
+// escrito no acervo, e preferencia de tela).
+model UserTablePreference {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  tableKey      String   @map("table_key")
+  columnOrder   String[] @map("column_order")
+  hiddenColumns String[] @map("hidden_columns")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, tableKey])
+  @@map("user_table_preferences")
   @@schema("public")
 }
 

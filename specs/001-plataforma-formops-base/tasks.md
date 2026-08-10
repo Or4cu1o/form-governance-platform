@@ -297,36 +297,54 @@ administrativa contra o Postgres real (ver nota de T097).
 unidades, indicador de quantitativo de servidores"* — e verificar a série retornada, unidade a
 unidade, mês a mês, com a semântica de ausência correta em cada célula (quickstart V12).
 
-**Estado atual**: **não existe**. Módulo inteiro novo.
+**Estado atual**: completo (T099-T119a). Módulo inteiro novo: `AuditQueryService`/`Controller`,
+`TablePreferencesService`, `AbsenceLegend`/`SparseMatrix`/`AuditPage` no frontend. 27 testes novos
+no backend (`npx jest audit/`), 6 novos no frontend (`AbsenceLegend`, `SparseMatrix`, `AuditPage`).
+
+**Decisões de design documentadas** (o contrato declara a chave `(referencePeriod DESC, unitId ASC,
+indicatorCode ASC, responseId ASC)`, mas o grão real da consulta é por `ReportInstance` — unidade ×
+período —, não por `IndicatorResponse` individual; a chave efetiva usada é `(referenceMonth DESC,
+unitId ASC, reportInstance.id ASC)`, deterministicamente equivalente para esse grão):
+- `compliance`/`verdicts`/`punctuality`/`scoreFrom`/`scoreTo`/`authorIds`/`eventTypes` narrowam
+  **quais** `ReportInstance` entram no resultado (via `indicatorResponses: { some: {...} }`), não a
+  aparência de célula a célula — nenhum cenário de US6 exige granularidade mais fina que isso.
+- `eventTypes` (modo DETALHADO) casa contra `AuditLog` (`tableName='indicator_responses'`), o
+  rastro do gatilho de banco — não contra `AccessLog`, que registra consultas, não edições.
+- `countMode` implementado como `EXATA`/`TETO` (nunca `APROXIMADA`): abaixo do limite conta exato;
+  acima, declara o teto configurado (`auditExactCountThreshold`) em vez de estimar — evita uma
+  segunda consulta de amostragem sem violar FR-091 (sempre declarado, nunca truncamento silencioso).
+- `isOutlier` por célula e `outlierRule` no corpo da resposta são um acréscimo aditivo ao exemplo
+  JSON do contrato (T112 exige a sinalização; o exemplo do contrato não a modela) — nunca influencia
+  `kind`/`value` de nenhuma célula nem entra em nenhuma agregação.
 
 ### Testes
 
-- [ ] T099 [P] [US6] [TEST] Criar `apps/api/src/audit/audit-query.service.spec.ts`: consulta multi-nível produz matriz esparsa com código de ausência **exato** em toda célula vazia — nunca `0`, nunca vazio silencioso (cenário US6-2, quickstart V2)
-- [ ] T100 [P] [US6] [TEST] Estender `apps/api/src/audit/audit-query.service.spec.ts`: unidade que mudou de nível no meio do intervalo reporta `NA_FORA_DO_NIVEL` antes da transição e valores depois (cenário US6-3)
-- [ ] T101 [P] [US6] [TEST] Estender `apps/api/src/audit/audit-query.service.spec.ts`: conjunto vazio retorna `isEmptyResult` **sem** ampliar período, remover unidade, afrouxar recorte nem sugerir alternativa (cenário US6-4, FR-083)
-- [ ] T102 [P] [US6] [TEST] Estender `apps/api/src/audit/audit-query.service.spec.ts`: toda agregação declara `n` e `totalCells`, e células ausentes ficam fora do denominador, sem interpolação nem repetição de valor anterior (cenários US6-6, US6-7); e indicadores de `measurementUnit` distintas **não** são agregados entre si (FR-065)
-- [ ] T103 [P] [US6] [TEST] Criar `apps/api/src/audit/determinism.spec.ts`: duas execuções idênticas retornam linhas na mesma ordem, byte a byte (cenário US6-9, quickstart V12)
-- [ ] T104 [P] [US6] [TEST] Criar `apps/api/src/audit/audit-scope.spec.ts`: usuário de escopo restrito enxerga exatamente as unidades que já enxergava — nenhum acesso novo (cenário US6-10)
-- [ ] T105 [P] [US6] [TEST] Estender `apps/api/src/audit/audit-query.service.spec.ts`: amplitude acima de `auditMaxRangeMonths` → 400 com orientação, jamais truncamento silencioso (FR-091)
+- [x] T099 [P] [US6] [TEST] `apps/api/src/audit/audit-query.service.spec.ts`: consulta multi-nível produz matriz esparsa com código de ausência **exato** em toda célula vazia — nunca `0`, nunca vazio silencioso (cenário US6-2, quickstart V2)
+- [x] T100 [P] [US6] [TEST] `apps/api/src/audit/audit-query.service.spec.ts`: unidade que mudou de nível no meio do intervalo reporta `NA_FORA_DO_NIVEL` antes da transição e valores depois (cenário US6-3)
+- [x] T101 [P] [US6] [TEST] `apps/api/src/audit/audit-query.service.spec.ts`: conjunto vazio retorna `isEmptyResult` **sem** ampliar período, remover unidade, afrouxar recorte nem sugerir alternativa (cenário US6-4, FR-083)
+- [x] T102 [P] [US6] [TEST] `apps/api/src/audit/audit-query.service.spec.ts`: toda agregação declara `n` e `totalCells`, e células ausentes ficam fora do denominador, sem interpolação nem repetição de valor anterior (cenários US6-6, US6-7); e indicadores de `measurementUnit` distintas **não** são agregados entre si (FR-065)
+- [x] T103 [P] [US6] [TEST] `apps/api/src/audit/determinism.spec.ts`: duas execuções idênticas retornam linhas na mesma ordem, byte a byte (cenário US6-9, quickstart V12)
+- [x] T104 [P] [US6] [TEST] `apps/api/src/audit/audit-scope.spec.ts`: usuário de escopo restrito enxerga exatamente as unidades que já enxergava — nenhum acesso novo (cenário US6-10)
+- [x] T105 [P] [US6] [TEST] `apps/api/src/audit/audit-query.service.spec.ts`: amplitude acima de `auditMaxRangeMonths` → 400 com orientação, jamais truncamento silencioso (FR-091); testado também o limite mais estrito de `auditDetailedMaxRangeMonths` em modo DETALHADO
 
 ### Implementação
 
-- [ ] T106 [US6] Criar `apps/api/src/audit/audit-query.service.ts` e `apps/api/src/audit/audit-query.controller.ts` conforme [contracts/api-rest.md](./contracts/api-rest.md), declarando-os no `audit.module.ts` já criado em T030
-- [ ] T107 [US6] Criar `apps/api/src/audit/dto/audit-query.dto.ts` com todos os parâmetros do contrato, validando amplitude antes de executar
-- [ ] T108 [US6] Implementar paginação **keyset** sobre `(referencePeriod DESC, unitId ASC, indicatorCode ASC, responseId ASC)` em `apps/api/src/audit/audit-query.service.ts`; `OFFSET` profundo é proibido (research.md D5)
-- [ ] T109 [US6] Criar migração `apps/api/prisma/migrations/<nova>_add_audit_query_indexes/migration.sql` com os índices GIN `jsonb_path_ops` e `pg_trgm` de `research.md` D6
-- [ ] T110 [US6] Implementar a montagem da matriz esparsa em `apps/api/src/audit/audit-query.service.ts`, reutilizando `apps/api/src/reports/absence.util.ts` de T030a — a semântica de ausência tem uma origem só —, e recusar agregação que misture `measurementUnit` distintas: somar grandezas diferentes produz número sem significado (FR-065)
-- [ ] T111 [US6] Implementar `countMode` (`EXATA` | `APROXIMADA` | `TETO`) governado por `SystemSetting.auditExactCountThreshold` em `apps/api/src/audit/audit-query.service.ts`
-- [ ] T112 [US6] Criar `apps/api/src/audit/outlier.util.ts` e o `.spec.ts`: sinalização estatística é **apenas** indicação para inspeção humana, com a regra declarada, e não altera conformidade, nota nem estado (cenário US6-8)
-- [ ] T113 [US6] Criar `GET /api/audit/filters` em `apps/api/src/audit/audit-query.controller.ts` com opções encadeadas e reativas; a busca do seletor **apenas localiza item na lista** (FR-077)
-- [ ] T113a [US6] Implementar em `apps/api/src/audit/audit-query.service.ts` a busca dentro do resultado alcançando o **conjunto inteiro**, não o trecho renderizado — a busca é parâmetro da consulta ao banco, nunca filtro de cliente sobre a página corrente; concluir que um registro não existe porque não está renderizado é inaceitável (FR-092, Edge Case "Busca dentro de resultado extenso"), com teste dedicado
-- [ ] T114 [US6] Instrumentar toda execução de consulta em `apps/api/src/audit/audit-query.service.ts` com `AccessLog` contendo filtros na íntegra, escopo e volume
-- [ ] T115 [P] [US6] Criar `apps/web/src/pages/AuditPage.tsx` e `AuditPage.test.tsx` com os seletores encadeados e os modos `BASICO`/`DETALHADO`
-- [ ] T116 [P] [US6] Criar `apps/web/src/components/AbsenceLegend.tsx` e teste: a legenda acompanha a tabela **sempre**, na tela e no arquivo, nunca só como dica de passagem do mouse (cenário US6-5)
-- [ ] T117 [P] [US6] Criar `apps/web/src/components/SparseMatrix.tsx` e teste, exibindo `n` e a diferença para o total de células em toda média ou taxa
-- [ ] T118 [P] [US6] Implementar em `apps/web/src/pages/AuditPage.tsx` navegação contínua ou anterior/próxima, sem conjunto ilimitado (cenário US6-11)
-- [ ] T119 [P] [US6] Garantir em `apps/web/src/components/SparseMatrix.tsx` que ordenação e visibilidade de coluna são apresentação, nunca filtro: mudá-las não remove linha nem altera agregação (cenário US6-12), com teste dedicado
-- [ ] T119a [US6] Criar o modelo `UserTablePreference` em `apps/api/prisma/schema.prisma` com a migração correspondente, e as rotas de leitura e gravação em `apps/api/src/audit/audit-query.controller.ts`, persistindo ordenação e visibilidade de coluna **por usuário** (FR-090); a preferência é apresentação e não entra em nenhum caminho de filtro
+- [x] T106 [US6] `apps/api/src/audit/audit-query.service.ts` e `apps/api/src/audit/audit-query.controller.ts` conforme [contracts/api-rest.md](./contracts/api-rest.md), declarados no `audit.module.ts` (T030)
+- [x] T107 [US6] `apps/api/src/audit/dto/audit-query.dto.ts` com todos os parâmetros do contrato (primeiro DTO de query do projeto com arrays — `@Transform` normaliza valor único/repetido), validando amplitude antes de executar
+- [x] T108 [US6] Paginação **keyset** em `apps/api/src/audit/audit-query.service.ts` (ver nota de grão da consulta acima); `OFFSET` profundo não é usado em nenhum ponto (research.md D5)
+- [x] T109 [US6] Migração `apps/api/prisma/migrations/20260810092000_add_audit_query_indexes/migration.sql` com os índices GIN `jsonb_path_ops`/`pg_trgm` e o B-tree composto de `research.md` D6; validada com `psql` contra o Postgres de desenvolvimento
+- [x] T110 [US6] Montagem da matriz esparsa em `apps/api/src/audit/audit-query.service.ts`, reutilizando `apps/api/src/reports/absence.util.ts` (T030a) via `CELL_KIND_BY_STATE` — a semântica de ausência tem uma origem só —, e agregação sempre por coluna (nunca mistura `measurementUnit` distintas, FR-065)
+- [x] T111 [US6] `countMode` (`EXATA`/`TETO`, ver nota de design acima) governado por `SystemSetting.auditExactCountThreshold` em `apps/api/src/audit/audit-query.service.ts`
+- [x] T112 [US6] `apps/api/src/audit/outlier.util.ts` e `.spec.ts`: regra IQR declarada (`outlierRule`), sinalização apenas indicativa — nunca altera conformidade, nota nem estado (cenário US6-8)
+- [x] T113 [US6] `GET /api/audit/filters` em `apps/api/src/audit/audit-query.controller.ts`/`audit-query.service.ts` com opções encadeadas (unidade/nível restringem indicadores elegíveis, FR-076)
+- [x] T113a [US6] Busca dentro do resultado (`search`) implementada como parâmetro do `WHERE` do Prisma em `apps/api/src/audit/audit-query.service.ts` — alcança o conjunto inteiro, nunca a página renderizada (FR-092); teste dedicado prova o parâmetro chega ao `findMany` independente do `pageSize`
+- [x] T114 [US6] Toda execução de `query()` em `apps/api/src/audit/audit-query.service.ts` grava `AccessLog` (filtros na íntegra, escopo, volume) via `AccessLogService.record`
+- [x] T115 [P] [US6] `apps/web/src/pages/AuditPage.tsx` e `AuditPage.test.tsx` com os seletores encadeados (unidade/nível/busca) e os modos `BASICO`/`DETALHADO`; rota `/auditoria` aberta a todos os perfis (`App.tsx`, `AppShell.tsx`)
+- [x] T116 [P] [US6] `apps/web/src/components/AbsenceLegend.tsx` e teste: a legenda acompanha a tabela **sempre** como texto visível (`<dl>`), nunca só como `title`/tooltip (cenário US6-5)
+- [x] T117 [P] [US6] `apps/web/src/components/SparseMatrix.tsx` e teste, exibindo `n` e a diferença para o total de células em toda média ou taxa
+- [x] T118 [P] [US6] `apps/web/src/pages/AuditPage.tsx`: paginação anterior/próxima por pilha de cursores (`nextCursor`), nunca conjunto ilimitado (cenário US6-11)
+- [x] T119 [P] [US6] `apps/web/src/components/SparseMatrix.tsx`: `columnOrder`/`hiddenColumns` são puramente de apresentação — `rows`/`aggregations` recebidos da API nunca são filtrados nem recalculados ao reordenar/ocultar coluna (cenário US6-12), com teste dedicado
+- [x] T119a [US6] Modelo `UserTablePreference` em `apps/api/prisma/schema.prisma` + migração `20260810093000_add_user_table_preference`, `TablePreferencesService` e rotas `GET`/`POST /api/audit/table-preferences/:tableKey` em `audit-query.controller.ts`, persistindo por usuário e por tabela (FR-090); nunca participa de nenhum caminho de `AuditQueryService.query()`
 
 **Checkpoint**: acervo defensável perante auditor externo. Roda quickstart V2, V12, V15.
 

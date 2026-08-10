@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { ClipboardList, LayoutDashboard, LogOut, ShieldCheck, Sliders } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, LogOut, SearchCheck, ShieldCheck, Sliders } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABEL } from '../../lib/status';
 import { cn } from '../../lib/cn';
@@ -18,6 +18,12 @@ const NAV_ITEMS: NavItem[] = [
     to: '/',
     label: 'Painel Central',
     icon: LayoutDashboard,
+    roles: ['OBSERVADOR', 'ELABORADOR', 'REVISOR', 'APROVADOR', 'ADMINISTRADOR'],
+  },
+  {
+    to: '/auditoria',
+    label: 'Área de Auditoria',
+    icon: SearchCheck,
     roles: ['OBSERVADOR', 'ELABORADOR', 'REVISOR', 'APROVADOR', 'ADMINISTRADOR'],
   },
   {

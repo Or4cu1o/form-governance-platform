@@ -1,10 +1,17 @@
 import { Module } from '@nestjs/common';
+import { ExportModule } from '../export/export.module';
 import { AccessLogService } from './access-log.service';
+import { AuditQueryController } from './audit-query.controller';
+import { AuditQueryService } from './audit-query.service';
+import { TablePreferencesService } from './table-preferences.service';
 
-// Casca do modulo de auditoria (T030) — AuditQueryService/Controller (US6,
-// T106) e o restante da trilha de leitura (T107-T113) se registram aqui.
+// Modulo de auditoria (T030 + US6/T106): consulta multi-eixo sobre dado
+// vivo (AuditQueryService/Controller) e o registro de acesso generico
+// (AccessLogService), reutilizado por outros modulos (selagem, verificacao).
 @Module({
-  providers: [AccessLogService],
+  imports: [ExportModule],
+  controllers: [AuditQueryController],
+  providers: [AccessLogService, AuditQueryService, TablePreferencesService],
   exports: [AccessLogService],
 })
 export class AuditModule {}

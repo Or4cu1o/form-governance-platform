@@ -11,6 +11,19 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 
 ### Added
 
+- Área de Auditoria (US6, T099-T119a): módulo `apps/api/src/audit/` inteiro novo —
+  `AuditQueryService`/`Controller` (`GET /api/audit/query`, `GET /api/audit/filters`) produz a
+  matriz esparsa unidade × período × indicador com código de ausência exato em toda célula sem
+  resposta correspondente (nunca `0`, nunca vazio silencioso), reutilizando
+  `reports/absence.util.ts` como origem única da semântica de ausência; paginação keyset
+  determinística (sem `OFFSET`), amplitude máxima declarada por `SystemSetting`
+  (`auditMaxRangeMonths`/`auditDetailedMaxRangeMonths`), busca dentro do resultado como parâmetro
+  de banco (nunca filtro sobre a página renderizada), sinalização de outlier por IQR
+  (`outlier.util.ts`, apenas indicativa) e `AccessLog` em toda execução. `UserTablePreference`
+  novo (T119a) persiste ordenação/visibilidade de coluna por usuário, sempre apresentação, nunca
+  filtro. Frontend: `AuditPage`/`AbsenceLegend`/`SparseMatrix`, rota `/auditoria` aberta a todos
+  os perfis. Índices GIN `jsonb_path_ops`/`pg_trgm` e B-tree de paginação
+  (`20260810092000_add_audit_query_indexes`).
 - Custódia de chave de selagem Ed25519 (`KeyCustodyService`): carregamento por referência a
   arquivo, nunca por variável de ambiente, com suporte a chaves aposentadas (`retired/*.pub.pem`).
 - Provisionamento automático de dois buckets de evidência com ciclo de vida distinto: imutável
@@ -295,3 +308,13 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   — nenhum dos 6 services afetados (`admin/`, `forms/`, `export/platform-settings.service.ts`) o
   usava; corrigido nesta fase (T097) por ser o mesmo mecanismo que grava autor/data/valor
   anterior/novo exigido pelo cenário US5-5.
+- **Fase 8 — US6 (P6)** (T099-T119a): concluída. Módulo `audit` inteiro novo — o grão real da
+  consulta é `ReportInstance` (unidade × período), não `IndicatorResponse` individual como o
+  contrato de paginação sugere textualmente; a chave keyset efetiva
+  (`referenceMonth DESC, unitId ASC, reportInstance.id ASC`) é deterministicamente equivalente
+  para esse grão, documentado em `tasks.md`. `countMode` implementado como `EXATA`/`TETO` (nunca
+  `APROXIMADA`, que exigiria uma segunda consulta de amostragem sem ganho de garantia sobre
+  FR-091). Filtros de conformidade/veredito/pontualidade/autor/tipo de evento narrowam quais
+  `ReportInstance` entram no resultado via `indicatorResponses.some`, não célula a célula.
+  `isOutlier`/`outlierRule` são acréscimo aditivo ao exemplo do contrato, nunca influenciam
+  `kind`/`value` de nenhuma célula.

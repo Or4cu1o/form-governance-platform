@@ -7,6 +7,7 @@ import { AdminAccessPage } from './pages/AdminAccessPage';
 import { AdminCatalogPage } from './pages/AdminCatalogPage';
 import { AdminFormsPage } from './pages/AdminFormsPage';
 import { AdminSettingsPage } from './pages/AdminSettingsPage';
+import { AuditPage } from './pages/AuditPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -25,6 +26,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/auditoria" element={<AuditPage />} />
 
               <Route element={<ProtectedRoute allowedRoles={['ELABORADOR', 'REVISOR', 'ADMINISTRADOR']} />}>
                 <Route path="/relatorios" element={<ReportsPage />} />
