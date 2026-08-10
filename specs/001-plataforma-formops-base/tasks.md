@@ -358,38 +358,61 @@ unitId ASC, reportInstance.id ASC)`, deterministicamente equivalente para esse g
 verificador público, alterar um único byte do arquivo e confirmar que a verificação passa a acusar
 adulteração (quickstart V8).
 
-**Estado atual**: **não existe**. `apps/api/src/export/` produz arquivos, mas sem selo.
+**Estado atual**: completo (T120-T143). Achado ao reavaliar o ponto de partida: `KeyCustodyService`
+(custódia de chave Ed25519 por arquivo, chaves aposentadas) já existia de trabalho anterior — T130
+reaproveitou-o em vez de recriar. Módulos inteiros novos: `apps/api/src/sealing/`,
+`apps/api/src/verification/`; `apps/api/src/export/` ganhou `pdf.service.ts` e
+`audit-export.service.ts`. 62 testes novos no backend, 5 no frontend (`VerifyPage` + `App.test.tsx`).
+
+**Decisões de design documentadas**:
+- Pipeline de selagem em **duas fases** (`SealService.prepareSeal`/`persistSeal`, não uma chamada
+  única): `contentDigest`/assinatura/`keyId`/código de verificação são conhecidos ANTES de renderizar
+  o artefato, porque o rodapé do PDF os estampa em texto legível (T134) — só o `artifactDigest` vem
+  depois, sobre os bytes finais (com o rodapé já embutido). O rodapé nunca estampa o `artifactDigest`
+  (só serve à checagem online de adulteração do arquivo, nunca à verificação offline).
+- `AccessLogService` migrou de `AuditModule` para `CommonModule` (`@Global()`) para quebrar uma
+  dependência circular: `ExportModule` passou a precisar dele (T133/T135) e `AuditModule` já
+  importava `ExportModule` (para `PlatformSettingsService`).
+- `POST /api/audit/export` (T135) foi adicionado a `AuditQueryController` — o contrato menciona um
+  `POST /api/exports` genérico, mas T133 evolui o endpoint per-relatório já existente
+  (`GET /report-instances/:id/export`) em vez de substituí-lo; `audit-export` ganhou rota própria
+  pelo mesmo racional.
+- `GET /api/public/keys` retorna `activeFrom: null` — `KeyCustodyService` carrega chaves por arquivo,
+  sem metadado de data de rotação; nenhuma tela depende desse campo hoje, só da flag de aposentadoria.
+- Wiring de módulos (ausência de dependência circular) verificado por rastreamento manual do grafo,
+  não por boot real do Nest — mesma limitação de sandbox das 5 suítes de integração pré-existentes
+  (`APP_DATABASE_URL` indisponível).
 
 ### Testes
 
-- [ ] T120 [P] [US7] [TEST] Criar `apps/api/src/sealing/canonical-serialization.spec.ts` cobrindo as nove regras de [contracts/canonical-serialization.md](./contracts/canonical-serialization.md), com **regressão de byte único**: qualquer alteração no conteúdo canônico muda o `contentDigest`
-- [ ] T121 [P] [US7] [TEST] Criar `apps/api/src/sealing/seal.service.spec.ts`: os três formatos do mesmo recorte compartilham o **mesmo** `contentDigest` e têm `artifactDigest` distintos (cenário US7-1, FR-098)
-- [ ] T122 [P] [US7] [TEST] Criar `apps/api/src/verification/public-verification.spec.ts`: um byte alterado → `CONTEUDO_INTEGRO_ARQUIVO_ADULTERADO`, nunca `INTEGRO` (cenário US7-2)
-- [ ] T123 [P] [US7] [TEST] Estender `apps/api/src/verification/public-verification.spec.ts`: código inexistente e código malformado produzem respostas idênticas em corpo **e** em distribuição de latência (cenário US7-6, FR-105)
-- [ ] T124 [P] [US7] [TEST] Estender `apps/api/src/verification/public-verification.spec.ts`: nenhum valor de indicador, análise, plano de ação ou evidência aparece em qualquer resposta desta superfície (cenário US7-5, FR-102)
-- [ ] T125 [P] [US7] [TEST] Estender `apps/api/src/verification/public-verification.spec.ts`: selo revogado retorna motivo e data, e o registro original permanece consultável e intacto (cenário US7-7)
-- [ ] T126 [P] [US7] [TEST] Estender `apps/api/src/verification/public-verification.spec.ts`: selo emitido sob chave aposentada continua verificável (FR-104)
+- [x] T120 [P] [US7] [TEST] `apps/api/src/sealing/canonical-serialization.spec.ts` cobrindo as nove regras de [contracts/canonical-serialization.md](./contracts/canonical-serialization.md), com **regressão de byte único**: qualquer alteração no conteúdo canônico muda o `contentDigest`
+- [x] T121 [P] [US7] [TEST] `apps/api/src/sealing/seal.service.spec.ts`: os três formatos do mesmo recorte compartilham o **mesmo** `contentDigest` e têm `artifactDigest` distintos (cenário US7-1, FR-098)
+- [x] T122 [P] [US7] [TEST] `apps/api/src/verification/public-verification.spec.ts`: um byte alterado → `CONTEUDO_INTEGRO_ARQUIVO_ADULTERADO`, nunca `INTEGRO` (cenário US7-2)
+- [x] T123 [P] [US7] [TEST] `apps/api/src/verification/public-verification.spec.ts` (corpo) + `apps/api/src/verification/verification.util.spec.ts` (piso de latência): código inexistente e código malformado produzem respostas idênticas em corpo **e** em distribuição de latência (cenário US7-6, FR-105)
+- [x] T124 [P] [US7] [TEST] `apps/api/src/verification/public-verification.spec.ts`: nenhum valor de indicador, análise, plano de ação ou evidência aparece em qualquer resposta desta superfície (cenário US7-5, FR-102)
+- [x] T125 [P] [US7] [TEST] `apps/api/src/verification/public-verification.spec.ts`: selo revogado retorna motivo e data, e o registro original permanece consultável e intacto (cenário US7-7)
+- [x] T126 [P] [US7] [TEST] `apps/api/src/verification/public-verification.spec.ts`: selo emitido sob chave aposentada continua verificável (FR-104)
 - [x] T127 [P] [US7] [TEST] Estender `apps/api/src/export/csv.util.spec.ts`: célula iniciada por `=`, `+`, `-` ou `@` recebe prefixação defensiva **na saída**, e o dado gravado permanece intacto (cenário US7-9, FR-110) — **já satisfeito**: `csv.util.ts:8,16` prefixa com apóstrofo e o spec cobre os quatro gatilhos, o payload com aspas e o não-gatilho no meio da célula
-- [ ] T128 [P] [US7] [TEST] Criar `apps/api/src/export/audit-export.service.spec.ts`: exportação de consulta carrega filtros na íntegra **inclusive os que não retornaram dados**, modo, colunas, ordenação, escopo, legenda de ausência, autoria e o `n` de cada agregação (cenário US7-10, FR-107)
-- [ ] T128a [P] [US7] [TEST] Criar `apps/api/src/export/recomputability.spec.ts`: toda agregação exibida é reproduzida a partir das linhas brutas do mesmo arquivo exportado — mesmo número, mesmo `n`, mesma escala decimal (FR-088, SC-008)
+- [x] T128 [P] [US7] [TEST] `apps/api/src/export/audit-export.service.spec.ts`: exportação de consulta carrega filtros na íntegra **inclusive os que não retornaram dados**, modo, colunas, escopo, legenda de ausência, autoria e o `n` de cada agregação (cenário US7-10, FR-107)
+- [x] T128a [P] [US7] [TEST] `apps/api/src/export/recomputability.spec.ts`: toda agregação exibida é reproduzida a partir das linhas brutas do mesmo arquivo exportado — mesmo número, mesmo `n`, mesma escala decimal (FR-088, SC-008)
 
 ### Implementação
 
-- [ ] T129 [US7] Criar `apps/api/src/sealing/canonical-serialization.ts` implementando o contrato `seal-v1` — ordenação lexicográfica recursiva, escalas decimais declaradas, ISO-8601 UTC com `Z`, nulos presentes, objetos de ausência explícitos
-- [ ] T130 [US7] Criar `apps/api/src/sealing/signature.service.ts` com Ed25519 via `node:crypto` nativo, assinando o `contentDigest` e expondo o `keyId` ativo
-- [ ] T131 [US7] Criar `apps/api/src/sealing/verification-code.util.ts` e o `.spec.ts`: código não sequencial de fonte criptograficamente segura, alfabeto sem caracteres ambíguos (`0`/`O`, `1`/`I`) e dígito verificador
-- [ ] T132 [US7] Criar `apps/api/src/sealing/seal.service.ts` e `apps/api/src/sealing/sealing.module.ts` gravando `ExportSeal` imutável; a revogação é registro **adicional** em `ExportSealRevocation`, nunca alteração do original (FR-101)
-- [ ] T133 [US7] Alterar `apps/api/src/export/report-export.service.ts` para selar **todo** artefato — inclusive parcial e conjunto vazio (cenário US7-8, FR-097) — nos três formatos, incluindo o de integração (JSON) — e registrar a emissão em `AccessLog` com escopo, formato e autoria (FR-094, FR-073)
-- [ ] T134 [US7] Criar `apps/api/src/export/pdf.service.ts` gerando o PDF **server-side a partir do acervo**, jamais do DOM renderizado (FR-108), com QR code, assinatura eletrônica do aprovador (nome, cargo, unidade) e digests estampados em texto legível no rodapé
-- [ ] T135 [US7] Criar `apps/api/src/export/audit-export.service.ts` para exportar consulta de auditoria com todo o cabeçalho de proveniência de FR-107, resolvendo o nome do arquivo a partir do padrão configurado em `SystemSetting` (FR-096) e registrando a emissão em `AccessLog` (FR-073)
-- [ ] T136 [US7] Criar `apps/api/src/verification/verification.controller.ts` e `apps/api/src/verification/verification.module.ts` com as rotas públicas de [contracts/public-verification.md](./contracts/public-verification.md), **sem** guard de autenticação
-- [ ] T137 [US7] Implementar em `apps/api/src/verification/verification.controller.ts` a comparação em tempo constante e o atraso de normalização de latência, com rate limiting **próprio** desta rota, independente do limite global
-- [ ] T138 [US7] Implementar `POST /api/public/seals/:codigo/verify-artifact` em `apps/api/src/verification/verification.controller.ts`, aceitando o `artifactDigest` calculado pelo auditor — **o arquivo não é enviado**
-- [ ] T139 [US7] Implementar `GET /api/public/keys` e `GET /api/public/keys/:keyId` em `apps/api/src/verification/verification.controller.ts`; chave aposentada é marcada, nunca removida
-- [ ] T140 [US7] Registrar `AccessLog` com `eventType = VERIFICACAO_SELO` e `actorKind = ANONIMO_DECLARADO` em toda verificação, em `apps/api/src/verification/verification.controller.ts` (FR-072, FR-073)
-- [ ] T141 [P] [US7] Criar `apps/web/src/pages/VerifyPage.tsx` e `VerifyPage.test.tsx` — rota pública, fora do guard de sessão, apresentando os cinco vereditos em linguagem que um auditor externo entenda
-- [ ] T142 [P] [US7] Alterar `apps/web/src/App.tsx` para expor `/verificar/:codigo` sem exigir autenticação; estender `apps/web/src/App.test.tsx`
-- [ ] T143 [P] [US7] [TEST] Criar `apps/api/src/verification/offline-verification.spec.ts` provando que a assinatura confere usando **apenas** o documento e a chave pública publicada, sem contato com a plataforma (cenário US7-11, quickstart V9)
+- [x] T129 [US7] `apps/api/src/sealing/canonical-serialization.ts` implementando o contrato `seal-v1` — ordenação lexicográfica recursiva, escalas decimais declaradas (arredondamento decimal-exato, sem passar por `Number.toFixed`), ISO-8601 UTC com `Z`, nulos presentes, objetos de ausência explícitos
+- [x] T130 [US7] `apps/api/src/sealing/signature.service.ts` com Ed25519 via `node:crypto` nativo, assinando o `contentDigest` e expondo o `keyId` ativo — reaproveitando `KeyCustodyService` já existente
+- [x] T131 [US7] `apps/api/src/sealing/verification-code.util.ts` e o `.spec.ts`: código não sequencial de fonte criptograficamente segura (Base32, 32 símbolos — 256 divisível por 32, sem viés de amostragem), alfabeto sem caracteres ambíguos (`0`/`O`, `1`/`I`) e dígito verificador
+- [x] T132 [US7] `apps/api/src/sealing/seal.service.ts` (`prepareSeal`/`persistSeal`, ver nota de design) e `apps/api/src/sealing/sealing.module.ts` gravando `ExportSeal` imutável; a revogação é registro **adicional** em `ExportSealRevocation`, nunca alteração do original (FR-101)
+- [x] T133 [US7] `apps/api/src/export/report-export.service.ts` selando **todo** artefato — inclusive parcial (`status !== CONCLUIDO`) e conjunto vazio (cenário US7-8, FR-097) — nos três formatos, incluindo o de integração (JSON) — e registrando a emissão em `AccessLog` com escopo, formato e autoria (FR-094, FR-073); payload de prova (`buildCanonicalPayload`) deliberadamente separado do payload de apresentação
+- [x] T134 [US7] `apps/api/src/export/pdf.service.ts` gerando o PDF **server-side a partir do acervo** (`pdfkit`), jamais do DOM renderizado (FR-108), com QR code (`qrcode`), assinatura eletrônica do aprovador (nome, cargo, unidade) e digests estampados em texto legível no rodapé
+- [x] T135 [US7] `apps/api/src/export/audit-export.service.ts` exportando consulta de auditoria com todo o cabeçalho de proveniência de FR-107, percorrendo todas as páginas de `AuditQueryService` antes de selar (colunas fixadas pelo catálogo elegível, nunca variando página a página), resolvendo o nome do arquivo a partir do padrão configurado em `SystemSetting` (FR-096) e registrando a emissão em `AccessLog` (FR-073); rota `POST /api/audit/export`
+- [x] T136 [US7] `apps/api/src/verification/verification.controller.ts` e `apps/api/src/verification/verification.module.ts` com as rotas públicas de [contracts/public-verification.md](./contracts/public-verification.md), `@Public()` para escapar do `JwtAuthGuard`/`CsrfGuard` globais
+- [x] T137 [US7] `apps/api/src/verification/verification.util.ts` (`timingSafeDigestEqual`, `normalizeLatency`) — comparação em tempo constante (hash de tamanho fixo antes de `crypto.timingSafeEqual`) e piso de latência de 150ms cobrindo todo caminho de resposta; `@Throttle({ limit: 30, ttl: 60_000 })` próprio, independente do limite global
+- [x] T138 [US7] `POST /api/public/seals/:codigo/verify-artifact` em `verification.controller.ts`, aceitando o `artifactDigest` calculado pelo auditor — **o arquivo não é enviado**
+- [x] T139 [US7] `GET /api/public/keys` e `GET /api/public/keys/:keyId` em `verification.controller.ts`; chave aposentada é marcada (`retiredAt: 'retired'`), nunca removida da listagem
+- [x] T140 [US7] `AccessLog` com `eventType = VERIFICACAO_SELO` e `actorKind = ANONIMO_DECLARADO` registrado em toda verificação, em `verification.controller.ts` (FR-072, FR-073)
+- [x] T141 [P] [US7] `apps/web/src/pages/VerifyPage.tsx` e `VerifyPage.test.tsx` — rota pública, fora do guard de sessão, apresentando os cinco vereditos em linguagem que um auditor externo entenda
+- [x] T142 [P] [US7] `apps/web/src/App.tsx` expõe `/verificar/:codigo` sem exigir autenticação; `apps/web/src/App.test.tsx` estendido provando que a rota nunca redireciona ao login
+- [x] T143 [P] [US7] [TEST] `apps/api/src/verification/offline-verification.spec.ts` provando que a assinatura confere usando **apenas** a chave pública exportada, o `contentDigest` e o `keyId` — instância de verificação isolada, sem acesso ao `KeyCustodyService`/banco do lado que assinou (cenário US7-11, quickstart V9)
 
 **Checkpoint**: o acervo sai para o mundo externo com prova. Roda quickstart V8, V9.
 

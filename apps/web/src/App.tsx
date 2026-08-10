@@ -15,6 +15,7 @@ import { ReportDetailPage } from './pages/ReportDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ValidationBoardPage } from './pages/ValidationBoardPage';
 import { ValidationDetailPage } from './pages/ValidationDetailPage';
+import { VerifyPage } from './pages/VerifyPage';
 
 function App() {
   return (
@@ -22,6 +23,8 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* T142/FR-102: rota publica, fora do guard de sessao — nenhum login exigido. */}
+          <Route path="/verificar/:codigo" element={<VerifyPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>

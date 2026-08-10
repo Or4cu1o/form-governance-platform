@@ -31,6 +31,7 @@ describe('ReportExportController', () => {
       filename: 'FIL01_2026-07-14.csv',
       contentType: 'text/csv',
       body: 'a,b,c',
+      seal: { verificationCode: 'ABCD2345EFGH6789C', contentDigest: 'd', artifactDigest: 'a', keyId: 'seal-2026-01' },
     });
     const res = { set: setMock } as unknown as Response;
 
@@ -40,6 +41,7 @@ describe('ReportExportController', () => {
     expect(setMock).toHaveBeenCalledWith({
       'Content-Type': 'text/csv',
       'Content-Disposition': "attachment; filename=\"FIL01_2026-07-14.csv\"; filename*=UTF-8''FIL01_2026-07-14.csv",
+      'X-Seal-Verification-Code': 'ABCD2345EFGH6789C',
     });
     expect(result).toBe('a,b,c');
   });
@@ -49,6 +51,7 @@ describe('ReportExportController', () => {
       filename: 'Filial Contém Acentuação Ç.json',
       contentType: 'application/json',
       body: '{}',
+      seal: { verificationCode: 'ABCD2345EFGH6789C', contentDigest: 'd', artifactDigest: 'a', keyId: 'seal-2026-01' },
     });
     const res = { set: setMock } as unknown as Response;
 

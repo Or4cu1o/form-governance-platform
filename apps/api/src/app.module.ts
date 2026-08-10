@@ -23,6 +23,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { ValidationModule } from './validation/validation.module';
+import { VerificationModule } from './verification/verification.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ValidationModule } from './validation/validation.module';
     EvidenceModule,
     ValidationModule,
     ExportModule,
+    VerificationModule,
   ],
   controllers: [HealthController],
   providers: [

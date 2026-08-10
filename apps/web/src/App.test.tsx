@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 
 describe('App', () => {
@@ -29,5 +30,20 @@ describe('App', () => {
     window.history.pushState({}, '', '/rota-inexistente');
     render(<App />);
     expect(await screen.findByText('404')).toBeInTheDocument();
+  });
+
+  // T142/FR-102: /verificar/:codigo e publica — nunca redireciona para o
+  // login, mesmo sem nenhuma sessao ativa (o fetch global esta stubado
+  // para sempre rejeitar, simulando exatamente essa ausencia de sessao).
+  it('renders /verificar/:codigo without redirecting to login, even with no active session', async () => {
+    window.history.pushState({}, '', '/verificar/ABCD-2345-EFGH-6789-C');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('Verificação pública de selo')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Entrar' })).not.toBeInTheDocument();
   });
 });

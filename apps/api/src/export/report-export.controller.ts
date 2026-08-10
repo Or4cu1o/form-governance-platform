@@ -21,6 +21,10 @@ export class ReportExportController {
     res.set({
       'Content-Type': file.contentType,
       'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      // T133: todo artefato sai selado — o codigo de verificacao acompanha
+      // a resposta em cabecalho, alem de ja estar embutido no proprio
+      // arquivo (rodape do PDF, coluna do CSV, rodape.selo do JSON).
+      'X-Seal-Verification-Code': file.seal.verificationCode,
     });
     return file.body;
   }

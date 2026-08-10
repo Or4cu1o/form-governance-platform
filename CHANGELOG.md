@@ -11,6 +11,22 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 
 ### Added
 
+- Selagem e verificação pública de documento (US7, T120-T143): `apps/api/src/sealing/`
+  (`canonical-serialization.ts` implementa o contrato `seal-v1` — ordem lexicográfica recursiva,
+  escalas decimais fixas com arredondamento decimal-exato, ISO-8601 UTC, ausência como objeto
+  explícito; `signature.service.ts` assina o `contentDigest` via Ed25519 nativo reaproveitando o
+  `KeyCustodyService` já existente; `verification-code.util.ts` gera código Base32 não sequencial
+  sem caracteres ambíguos, com dígito verificador; `seal.service.ts` grava `ExportSeal` imutável em
+  duas fases — prepara `contentDigest`/assinatura/código antes de renderizar o artefato, persiste o
+  `artifactDigest` só depois, sobre os bytes finais). `apps/api/src/export/report-export.service.ts`
+  agora sela **todo** artefato (inclusive parcial e vazio) nos três formatos; PDF novo
+  (`pdf.service.ts`, `pdfkit`/`qrcode`) gerado server-side com QR code e digests no rodapé;
+  `audit-export.service.ts` novo exporta a consulta de auditoria inteira (todas as páginas) com
+  proveniência completa. Módulo público `apps/api/src/verification/` — `GET/POST
+  /api/public/seals/...`, `GET /api/public/keys...`, sem autenticação (`@Public()`), comparação em
+  tempo constante e piso de latência de 150ms (código inexistente e malformado indistinguíveis),
+  rate limit próprio. Frontend: `VerifyPage` em `/verificar/:codigo`, cinco vereditos em linguagem
+  para auditor externo, conferência de arquivo sem enviar o arquivo (só o digest).
 - Área de Auditoria (US6, T099-T119a): módulo `apps/api/src/audit/` inteiro novo —
   `AuditQueryService`/`Controller` (`GET /api/audit/query`, `GET /api/audit/filters`) produz a
   matriz esparsa unidade × período × indicador com código de ausência exato em toda célula sem
@@ -318,3 +334,11 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   `ReportInstance` entram no resultado via `indicatorResponses.some`, não célula a célula.
   `isOutlier`/`outlierRule` são acréscimo aditivo ao exemplo do contrato, nunca influenciam
   `kind`/`value` de nenhuma célula.
+- **Fase 9 — US7 (P7)** (T120-T143): concluída. Reavaliação do ponto de partida confirmou
+  `KeyCustodyService` (custódia de chave Ed25519) já pronto de trabalho anterior — T130 reaproveitou
+  em vez de recriar. Módulos novos `apps/api/src/sealing/` e `apps/api/src/verification/`. Pipeline
+  de selo em duas fases (`prepareSeal`/`persistSeal`): digest/assinatura/código conhecidos antes de
+  renderizar (o rodapé do PDF os estampa em texto legível), `artifactDigest` calculado só depois,
+  sobre os bytes finais — nunca estampado no documento, serve só à checagem online de adulteração.
+  `AccessLogService` migrou de `AuditModule` para `CommonModule` (`@Global()`) para quebrar uma
+  dependência circular nova (`ExportModule` → `AccessLogService`, `AuditModule` → `ExportModule`).
