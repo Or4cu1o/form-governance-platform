@@ -11,6 +11,22 @@ partir da execução de `/speckit-implement` sobre `specs/001-plataforma-formops
 
 ### Added
 
+- Fase 11 — Polish & Cross-Cutting (T157-T165): bloqueio automático por conta com camada
+  secundária por endereço de origem (`apps/api/src/auth/`, `IpLoginLockout`,
+  `Unit.knownEgressIps`, migração `20260810120000_add_account_and_ip_lockout`); liberação
+  antecipada da guarda pericial exclusiva do administrador (`POST
+  evidence-files/:id/forensic-release`, migração `20260810110000_add_forensic_hold_release`);
+  suíte consolidada das cinco invariantes obrigatórias da constituição
+  (`apps/api/src/reports/invariants.spec.ts`); varredura de rótulo textual acessível em todo
+  indicativo de estado (`apps/web/src/test/state-labels.test.tsx`), com correção do marcador de
+  outlier em `SparseMatrix.tsx` (só tinha `title=`, agora tem `aria-label`); WAL archiving
+  contínuo e rotina de backup/restauração (`docker-compose.yml`, `scripts/backup-restore.sh`,
+  `docs/backup-restore.md`); scripts de medição de performance da consulta canônica e do pico de
+  fechamento mensal (`apps/api/scripts/measure-*.ts`); percurso documentado dos 17 cenários do
+  quickstart (`specs/001-plataforma-formops-base/quickstart-results.md`).
+
+### Added
+
 - Camada analítica para BI (US8, T144-T156a): schema `analytics` com cinco views somente-leitura
   (`v_report_fact`, `v_absence_semantics`, `v_indicator_dim`, `v_unit_dim`, `v_evidence_link`) e
   `v_load_marker`, projetando o que o OLTP já decidiu — nenhuma recalcula nota, conformidade ou
@@ -363,3 +379,12 @@ Referência cruzada para quem navega por commit em vez de por `tasks.md`:
   `audit-query.service.ts`, deliberada para preservar a paridade BI↔Auditoria de FR-122 em vez de
   quebrá-la introduzindo histórico só de um lado. Rota real `/analytics/evidence/:token`, sem
   prefixo `api/` — nenhum controller existente usa esse prefixo (não há `setGlobalPrefix`).
+- **Fase 11 — Polish & Cross-Cutting** (T157-T165): concluída. Duas lacunas reais fechadas do zero:
+  liberação antecipada da guarda pericial (T158, `POST evidence-files/:id/forensic-release`) e
+  bloqueio automático por conta com camada secundária por IP (T159, `IpLoginLockout`,
+  `Unit.knownEgressIps`). T159a e a guarda pericial em si já estavam implementadas — achados, não
+  lacunas. Testes consolidados de invariante (T157) e de rótulo textual acessível (T157a, com
+  correção real: `▲` de outlier só tinha `title=`, agora tem `aria-label`). PITR/WAL archiving e
+  scripts de medição de performance/carga escritos e corretos, mas não executados neste sandbox —
+  mesma limitação de rede Docker isolada desde T020, documentada com transparência em vez de
+  simulada como concluída.

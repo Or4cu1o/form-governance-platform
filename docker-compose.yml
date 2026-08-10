@@ -6,10 +6,25 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # T160 (FR-130, SC-021): WAL archiving continuo para PITR — RPO de 15 min
+    # exige que nenhum segmento fique represado por mais tempo que isso;
+    # archive_timeout forca o flush mesmo sob baixo volume de escrita.
+    # Procedimento completo de backup/restauracao em docs/backup-restore.md.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+      - -c
+      - archive_timeout=300
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - formops_postgres_data:/var/lib/postgresql/data
+      - formops_wal_archive:/wal-archive
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -84,5 +99,6 @@ services:
 
 volumes:
   formops_postgres_data:
+  formops_wal_archive:
   formops_minio_data:
   formops_clamav_data:

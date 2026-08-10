@@ -167,6 +167,11 @@ model Unit {
   level          UnitLevel
   formTemplateId String?   @map("form_template_id")
   isActive       Boolean   @default(true) @map("is_active")
+  // Lista de excecao do bloqueio secundario por IP (FR-009, T159) —
+  // enderecos de saida conhecidos (ex.: NAT/proxy corporativo da unidade)
+  // nunca acionam o bloqueio por endereco, so o bloqueio por conta continua
+  // valendo para eles.
+  knownEgressIps String[]  @default([]) @map("known_egress_ips")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -192,6 +197,10 @@ model User {
   jobTitle      String?  @map("job_title")
   primaryUnitId String   @map("primary_unit_id")
   isActive      Boolean  @default(true) @map("is_active")
+  // Bloqueio por conta (FR-009, T159) — mecanismo primario, distinto do
+  // throttler por IP (secundario). Zerado a cada login bem-sucedido.
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  accountLockedUntil  DateTime? @map("account_locked_until")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -200,6 +209,7 @@ model User {
   updatedResponses         IndicatorResponse[]        @relation("ResponseUpdatedBy")
   uploadedEvidences        EvidenceFile[]             @relation("EvidenceUploadedBy")
   deactivatedEvidences     EvidenceFile[]             @relation("EvidenceDeactivatedBy")
+  forensicHoldReleasedEvidences EvidenceFile[]        @relation("EvidenceForensicHoldReleasedBy")
   validationRecords        ValidationRecord[]         @relation("ValidationByAprovador")
   auditLogs                AuditLog[]                 @relation("AuditActor")
   authoredResponseVersions IndicatorResponseVersion[] @relation("ResponseVersionAuthor")
@@ -246,6 +256,22 @@ model UserUnitAccess {
 
   @@unique([userId, unitId])
   @@map("user_unit_access")
+  @@schema("public")
+}
+
+// Bloqueio secundario por endereco de origem (FR-009, T159): limiar mais
+// alto e janela mais curta que o bloqueio por conta, e sujeito a lista de
+// excecao (Unit.knownEgressIps). Nao passa pelo gatilho de auditoria — a
+// propria linha e o registro consultavel do estado de bloqueio/desbloqueio,
+// mesmo precedente de "evidence_access_tokens".
+model IpLoginLockout {
+  id             String    @id @default(uuid())
+  sourceIp       String    @unique @map("source_ip")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("ip_login_lockouts")
   @@schema("public")
 }
 
@@ -474,6 +500,12 @@ model EvidenceFile {
   retentionMode     EvidenceRetentionMode @default(JANELA) @map("retention_mode")
   // scannedAt + 1 ano quando bloqueado (FR-039a).
   forensicHoldUntil DateTime?             @map("forensic_hold_until")
+  // Liberacao antecipada da guarda pericial, exclusiva do administrador —
+  // autor, motivo e data (FR-039a). Nulo enquanto a guarda segue vigente ou
+  // nunca foi acionada.
+  forensicHoldReleasedByUserId String?   @map("forensic_hold_released_by_user_id")
+  forensicHoldReleasedAt       DateTime? @map("forensic_hold_released_at")
+  forensicHoldReleaseReason    String?   @map("forensic_hold_release_reason")
 
   // Desativacao logica (FR-041): some da superficie de trabalho, nunca da
   // auditoria, exportacao ou camada analitica.
@@ -482,11 +514,12 @@ model EvidenceFile {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  indicatorResponse IndicatorResponse? @relation(fields: [indicatorResponseId], references: [id])
-  validationRecord  ValidationRecord?  @relation(fields: [validationRecordId], references: [id])
-  uploadedByUser    User               @relation("EvidenceUploadedBy", fields: [uploadedByUserId], references: [id])
-  deactivatedByUser User?              @relation("EvidenceDeactivatedBy", fields: [deactivatedByUserId], references: [id])
-  accessTokens      EvidenceAccessToken[]
+  indicatorResponse          IndicatorResponse?   @relation(fields: [indicatorResponseId], references: [id])
+  validationRecord           ValidationRecord?    @relation(fields: [validationRecordId], references: [id])
+  uploadedByUser             User                  @relation("EvidenceUploadedBy", fields: [uploadedByUserId], references: [id])
+  deactivatedByUser          User?                 @relation("EvidenceDeactivatedBy", fields: [deactivatedByUserId], references: [id])
+  forensicHoldReleasedByUser User?                 @relation("EvidenceForensicHoldReleasedBy", fields: [forensicHoldReleasedByUserId], references: [id])
+  accessTokens               EvidenceAccessToken[]
 
   @@map("evidence_files")
   @@schema("public")

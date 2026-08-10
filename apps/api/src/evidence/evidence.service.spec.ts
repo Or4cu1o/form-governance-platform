@@ -262,4 +262,56 @@ describe('EvidenceService', () => {
       });
     });
   });
+
+  // T158 (FR-039a): liberacao antecipada da guarda pericial, exclusiva do
+  // administrador — sempre com autor, motivo e data.
+  describe('releaseForensicHold', () => {
+    const administrador: AuthenticatedUser = { ...elaborador, id: 'admin-1', role: RoleName.ADMINISTRADOR };
+
+    test('throws NotFoundException when the evidence does not exist', async () => {
+      findUniqueEvidenceFileMock.mockResolvedValue(null);
+
+      await expect(service.releaseForensicHold('missing', administrador, 'motivo')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    test('throws BadRequestException when the evidence is not under forensic hold', async () => {
+      findUniqueEvidenceFileMock.mockResolvedValue({ forensicHoldUntil: null, forensicHoldReleasedAt: null });
+
+      await expect(service.releaseForensicHold('evidence-1', administrador, 'motivo')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    test('throws BadRequestException when the forensic hold was already released', async () => {
+      findUniqueEvidenceFileMock.mockResolvedValue({
+        forensicHoldUntil: new Date('2027-01-01'),
+        forensicHoldReleasedAt: new Date('2026-06-01'),
+      });
+
+      await expect(service.releaseForensicHold('evidence-1', administrador, 'motivo')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    test('releases the hold recording author, reason and date', async () => {
+      findUniqueEvidenceFileMock.mockResolvedValue({
+        forensicHoldUntil: new Date('2027-01-01'),
+        forensicHoldReleasedAt: null,
+      });
+
+      await service.releaseForensicHold('evidence-1', administrador, 'falso positivo confirmado com o fabricante');
+
+      expect(txUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'evidence-1' },
+        data: {
+          forensicHoldUntil: expect.any(Date),
+          forensicHoldReleasedByUserId: administrador.id,
+          forensicHoldReleasedAt: expect.any(Date),
+          forensicHoldReleaseReason: 'falso positivo confirmado com o fabricante',
+        },
+      });
+    });
+  });
 });

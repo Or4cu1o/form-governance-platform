@@ -16,6 +16,8 @@
     "provision:buckets": "ts-node scripts/provision-buckets.ts",
     "provision:app-role": "ts-node scripts/provision-app-role.ts",
     "provision:tableau-ro": "ts-node scripts/provision-tableau-ro.ts",
+    "measure:canonical-query": "ts-node scripts/measure-canonical-query-performance.ts",
+    "measure:monthly-close-load": "ts-node scripts/measure-monthly-close-load.ts",
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",

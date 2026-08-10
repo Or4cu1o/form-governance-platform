@@ -33,7 +33,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     try {
-      const user = await this.authService.validateCredentials(dto.identifier, dto.password);
+      const user = await this.authService.validateCredentials(dto.identifier, dto.password, request.ip ?? null);
       const { accessToken } = this.authService.login(user);
       this.issueSessionCookies(response, accessToken);
       await this.recordLoginAttempt(request, AccessLogEventType.LOGIN_SUCESSO, ActorKind.USUARIO, user.id);

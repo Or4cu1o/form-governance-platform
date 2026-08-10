@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -13,6 +14,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { EVIDENCE_MIME_TYPE_FILTER, MAX_EVIDENCE_UPLOAD_BYTES } from '../common/evidence-upload.constants';
+import { ForensicReleaseDto } from './dto/forensic-release.dto';
 import { EvidenceService } from './evidence.service';
 
 @Controller()
@@ -51,5 +53,17 @@ export class EvidenceController {
   @Post('evidence-files/:id/deactivate')
   deactivate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.evidenceService.deactivate(id, user);
+  }
+
+  // T158 (FR-039a): liberacao antecipada da guarda pericial de 1 ano,
+  // exclusiva do administrador.
+  @Roles(RoleName.ADMINISTRADOR)
+  @Post('evidence-files/:id/forensic-release')
+  releaseForensicHold(
+    @Param('id') id: string,
+    @Body() dto: ForensicReleaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.evidenceService.releaseForensicHold(id, user, dto.reason);
   }
 }

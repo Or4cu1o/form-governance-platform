@@ -8,6 +8,7 @@ describe('EvidenceController', () => {
   let uploadForIndicatorResponseMock: jest.Mock;
   let getDownloadUrlMock: jest.Mock;
   let deactivateMock: jest.Mock;
+  let releaseForensicHoldMock: jest.Mock;
 
   const user: AuthenticatedUser = {
     id: 'elaborador-1',
@@ -24,10 +25,12 @@ describe('EvidenceController', () => {
     uploadForIndicatorResponseMock = jest.fn().mockResolvedValue({ id: 'evidence-1' });
     getDownloadUrlMock = jest.fn().mockResolvedValue({ url: 'https://minio.local/signed-url' });
     deactivateMock = jest.fn().mockResolvedValue({ id: 'evidence-1', isActive: false });
+    releaseForensicHoldMock = jest.fn().mockResolvedValue({ id: 'evidence-1', forensicHoldReleasedAt: new Date() });
     const evidenceService = {
       uploadForIndicatorResponse: uploadForIndicatorResponseMock,
       getDownloadUrl: getDownloadUrlMock,
       deactivate: deactivateMock,
+      releaseForensicHold: releaseForensicHoldMock,
     } as unknown as EvidenceService;
     controller = new EvidenceController(evidenceService);
   });
@@ -51,5 +54,16 @@ describe('EvidenceController', () => {
 
     expect(deactivateMock).toHaveBeenCalledWith('evidence-1', user);
     expect(result).toEqual({ id: 'evidence-1', isActive: false });
+  });
+
+  // T158 (FR-039a): liberacao antecipada da guarda pericial — endpoint
+  // restrito ao administrador via @Roles no controller.
+  test('releaseForensicHold delegates to EvidenceService with the evidence id, user and reason', async () => {
+    const admin: AuthenticatedUser = { ...user, role: RoleName.ADMINISTRADOR };
+
+    const result = await controller.releaseForensicHold('evidence-1', { reason: 'falso positivo' }, admin);
+
+    expect(releaseForensicHoldMock).toHaveBeenCalledWith('evidence-1', admin, 'falso positivo');
+    expect(result).toEqual({ id: 'evidence-1', forensicHoldReleasedAt: expect.any(Date) });
   });
 });

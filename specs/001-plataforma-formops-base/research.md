@@ -262,6 +262,17 @@ introduz lógica nova. Divergência entre BI e área de auditoria é defeito, n�
 pelo Princípio VII; a decisão de materializar depende de medição real de desempenho e não deve ser
 antecipada.
 
+**Medição (T161, T161a — SC-011, SC-012, SC-012a)**: scripts prontos em
+`apps/api/scripts/measure-canonical-query-performance.ts` (`npm run measure:canonical-query`,
+primeira página da consulta canônica sobre 24 meses × todas as unidades, limiar 3s, repetido
+contra escalas maiores) e `apps/api/scripts/measure-monthly-close-load.ts`
+(`npm run measure:monthly-close-load`, 60 unidades × 400 usuários disputando a mesma janela de
+prazo). **Não executados neste sandbox** — mesma limitação de rede Docker isolada já documentada
+nas Fases 8–10 (sem Postgres real alcançável, `seed-demo.ts` hoje cobre 6 meses, abaixo da escala
+de 24 meses exigida pela medição). A decisão de materializar segue **não antecipada**: nenhum
+número real foi produzido ainda para justificá-la. Rodar os dois scripts contra um ambiente com
+Postgres real na escala-alvo é pré-requisito para fechar este `[verificar na implementação]`.
+
 ---
 
 ## Resumo de resolução

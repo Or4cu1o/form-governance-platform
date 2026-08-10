@@ -2,6 +2,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RoleName } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { AuditContextService } from '../common/services/audit-context.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 
@@ -12,6 +14,11 @@ describe('AuthService', () => {
   let service: AuthService;
   let findActiveByIdentifierMock: jest.Mock;
   let signMock: jest.Mock;
+  let findFirstUnitMock: jest.Mock;
+  let findUniqueIpLockoutMock: jest.Mock;
+  let upsertIpLockoutMock: jest.Mock;
+  let runWithAuditContextMock: jest.Mock;
+  let txUserUpdateMock: jest.Mock;
 
   const dbUser = {
     id: 'user-1',
@@ -22,14 +29,27 @@ describe('AuthService', () => {
     passwordHash: 'hashed-password',
     role: RoleName.ELABORADOR,
     primaryUnitId: 'unit-1',
+    failedLoginAttempts: 0,
+    accountLockedUntil: null as Date | null,
   };
 
   beforeEach(() => {
     findActiveByIdentifierMock = jest.fn();
     signMock = jest.fn().mockReturnValue('signed-jwt');
+    findFirstUnitMock = jest.fn().mockResolvedValue(null);
+    findUniqueIpLockoutMock = jest.fn().mockResolvedValue(null);
+    upsertIpLockoutMock = jest.fn().mockResolvedValue(undefined);
+    txUserUpdateMock = jest.fn().mockResolvedValue(undefined);
+    runWithAuditContextMock = jest.fn((fn: (tx: unknown) => unknown) => fn({ user: { update: txUserUpdateMock } }));
+
     const usersService = { findActiveByIdentifier: findActiveByIdentifierMock } as unknown as UsersService;
     const jwtService = { sign: signMock } as unknown as JwtService;
-    service = new AuthService(usersService, jwtService);
+    const prisma = {
+      unit: { findFirst: findFirstUnitMock },
+      ipLoginLockout: { findUnique: findUniqueIpLockoutMock, upsert: upsertIpLockoutMock },
+    } as unknown as PrismaService;
+    const auditContextService = { runWithAuditContext: runWithAuditContextMock } as unknown as AuditContextService;
+    service = new AuthService(usersService, jwtService, prisma, auditContextService);
   });
 
   afterEach(() => {

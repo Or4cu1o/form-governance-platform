@@ -115,7 +115,13 @@ export function SparseMatrix({
                   >
                     {formatCellValue(cell.kind, cell.value)}
                     {cell.isOutlier && (
-                      <span className="ml-1 text-status-reprovado" title="Sinalizado como atípico — apenas indicação, não altera conformidade, nota ou estado">
+                      // T157a: title= sozinho nao e confiavel em leitor de tela nem em touch —
+                      // aria-label garante o rotulo textual acessivel, o "▲" nunca e so cor.
+                      <span
+                        className="ml-1 text-status-reprovado"
+                        aria-label="Sinalizado como atípico — apenas indicação, não altera conformidade, nota ou estado"
+                        title="Sinalizado como atípico — apenas indicação, não altera conformidade, nota ou estado"
+                      >
                         ▲
                       </span>
                     )}

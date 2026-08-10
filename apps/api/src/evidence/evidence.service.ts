@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccessLogEventType, ActorKind, EvidenceScanStatus } from '@prisma/client';
 import { AccessLogService } from '../audit/access-log.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
@@ -110,6 +110,36 @@ export class EvidenceService {
       tx.evidenceFile.update({
         where: { id: evidenceFileId },
         data: { isActive: false, deactivatedByUserId: user.id, deactivatedAt: new Date() },
+      }),
+    );
+  }
+
+  // T158 (FR-039a): a guarda pericial de 1 ano (antivirus.service.ts) so
+  // termina antes do prazo por esta via — exclusiva do administrador
+  // (@Roles no controller), sempre com autor, motivo e data. O gatilho de
+  // auditoria (T166/T167) ja captura o UPDATE; os campos abaixo apenas
+  // tornam o motivo consultavel direto na linha, sem depender de acervo.
+  async releaseForensicHold(evidenceFileId: string, user: AuthenticatedUser, reason: string) {
+    const evidence = await this.prisma.evidenceFile.findUnique({ where: { id: evidenceFileId } });
+    if (!evidence) {
+      throw new NotFoundException('Evidencia nao encontrada');
+    }
+    if (!evidence.forensicHoldUntil) {
+      throw new BadRequestException('Esta evidencia nao esta sob guarda pericial');
+    }
+    if (evidence.forensicHoldReleasedAt) {
+      throw new BadRequestException('A guarda pericial desta evidencia ja foi liberada');
+    }
+
+    return this.auditContextService.runWithAuditContext((tx) =>
+      tx.evidenceFile.update({
+        where: { id: evidenceFileId },
+        data: {
+          forensicHoldUntil: new Date(),
+          forensicHoldReleasedByUserId: user.id,
+          forensicHoldReleasedAt: new Date(),
+          forensicHoldReleaseReason: reason,
+        },
       }),
     );
   }

@@ -45,7 +45,7 @@ describe('AuthController', () => {
       response as unknown as Response,
     );
 
-    expect(validateCredentialsMock).toHaveBeenCalledWith('10001', 'senha-forte');
+    expect(validateCredentialsMock).toHaveBeenCalledWith('10001', 'senha-forte', '10.0.0.5');
     expect(loginMock).toHaveBeenCalledWith(user);
     expect(result).toEqual({ user });
 

@@ -16,6 +16,8 @@ Registrado na Fase 12 (revisão de código/segurança) do plano de implementaç�
 
 **Quando revisitar:** antes de expor o envio de e-mail a qualquer entrada não controlada pela aplicação, ou na próxima janela de manutenção de dependências.
 
+**Reavaliação (T163, Fase 11):** sem mudança de superfície — a quarentena antivírus e a verificação de assinatura binária (abaixo) protegem o pipeline de **evidências**, um fluxo sem relação com o envio de e-mail. O risco aceito e o plano de correção continuam os mesmos.
+
 ## 2. `multer` com CVEs HIGH (via `@nestjs/platform-express@^10.4.15`)
 
 4 CVEs HIGH de negação de serviço: limpeza incompleta de upload, exaustão de recursos, recursão descontrolada em nomes de campo, limpeza incompleta de uploads abortados.
@@ -27,6 +29,12 @@ Registrado na Fase 12 (revisão de código/segurança) do plano de implementaç�
 - `EVIDENCE_MIME_TYPE_FILTER` restringe uploads de evidência a `application/pdf`, `image/png`, `image/jpeg`, `image/webp` — reduz a superfície de ataque mesmo que o parser tenha bugs de DoS.
 
 **Quando revisitar:** junto com o upgrade do NestJS 10→11 (recomendado tratar como projeto próprio, com testes de regressão completos, não como parte de uma correção pontual de segurança).
+
+**Reavaliação (T163, Fase 11):** duas camadas novas reduzem o risco residual, sem eliminar as CVEs da biblioteca em si (elas afetam o parsing do `multipart/form-data` propriamente dito, que já ocorreu antes de qualquer verificação subsequente rodar):
+- **Verificação de assinatura binária** (`assertEvidenceFileSignatureMatches`, T168, `src/common/evidence-upload.constants.ts`): rejeita, com `BadRequestException` e nada gravado, qualquer arquivo cujos bytes iniciais não correspondam à assinatura real do tipo declarado — fecha o vetor de MIME forjado que a whitelist por header sozinha não cobria.
+- **Quarentena com verificação antivírus** (`AntivirusService`, T050): todo upload aterrissa isolado e passa por ClamAV antes de qualquer promoção ao acervo imutável; um arquivo malicioso que sobrevivesse a um bug de DoS do `multer` ainda enfrentaria essa barreira antes de alcançar o restante da plataforma.
+
+Avaliação: o risco aceito permanece — nenhuma das duas camadas corrige os CVEs de exaustão de recursos do `multer` em si, que atuam durante o parsing, antes dessas verificações. O plano de correção (upgrade de framework) não muda.
 
 ## Achados já corrigidos nesta mesma revisão (não listados aqui como risco)
 
