@@ -91,3 +91,41 @@ de seguir para produção. O próximo passo, uma vez aprovado, é o deploy em am
 Um passo futuro já mapeado é a coleta automática de indicadores diretamente das ferramentas de
 monitoramento de rede, segurança e infraestrutura — reduzindo ainda mais a digitação manual, sem
 substituir o controle humano, apenas o trabalho repetitivo.
+
+## O que é necessário para colocar em produção
+
+**Uma máquina virtual (VM) na AWS**, rodando um conjunto de containers isolados entre si:
+o banco de dados, a verificação de antivírus dos arquivos enviados, e a aplicação em si
+(backend e frontend). O banco de dados roda dentro dessa mesma VM, via Docker — não é
+necessário contratar um serviço de banco gerenciado à parte para começar.
+
+**Capacidade recomendada para começar**: algo na faixa de 4 núcleos de processamento e 8 GB de
+memória, com ~50 GB de disco — folga confortável para o serviço de antivírus (o mais pesado do
+conjunto) e para o banco crescer por alguns anos de uso normal. É um ponto de partida, ajustável
+depois de observarmos o uso real; não é uma máquina de grande porte.
+
+**Armazenamento de evidências — MinIO ou Amazon S3.** O ambiente de testes de hoje guarda os
+arquivos anexados aos relatórios num serviço próprio (MinIO), rodando dentro da mesma VM. A
+plataforma já é compatível com o Amazon S3 real sem nenhuma alteração de código — é só uma troca
+de configuração. A recomendação é usar o S3 direto em produção: tira um serviço inteiro de dentro
+da VM (menos memória e disco consumidos ali, menos coisa para atualizar e manter segura), com
+durabilidade de nível empresarial para os arquivos. Como o volume de evidências de relatórios
+mensais tende a ser pequeno, o ganho de desempenho e a redução de responsabilidade operacional
+compensam o custo adicional, que se mantém baixo justamente por ser pouco espaço usado.
+
+**Acesso externo.** Para uso real (fora da demonstração de hoje, que usa um link temporário),
+também é necessário um domínio próprio com certificado de segurança (HTTPS) apontando para a VM —
+item padrão de qualquer aplicação web, não específico do FormOps.
+
+## Sobre custos
+
+**Infraestrutura (AWS):** não há valores fechados agora — dependem de decisões de contratação
+(tamanho da VM, banda, política de backup) que fazem mais sentido na conversa direta com o time
+responsável pela conta AWS. O que dá para afirmar com segurança: será necessária uma VM ativa de
+forma contínua, com custo mensal recorrente, mas moderado para o porte descrito acima. Não há
+custo de licenciamento de software — toda a base tecnológica usada é de código aberto.
+
+**Desenvolvimento:** a construção da plataforma usou o Claude Code (assistente de IA para
+desenvolvimento de software), pago com recursos próprios, na assinatura Pro, no limite da cota. O
+custo total rastreado em todas as sessões de trabalho deste projeto, do início até agora, soma
+pouco mais de **US$ 500**.
