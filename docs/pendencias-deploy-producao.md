@@ -1,7 +1,9 @@
-# Pendências pós-demo
+# Pendências para o deploy em produção (EC2)
 
-Itens levantados durante a preparação da demonstração via túnel (2026-08-10/11) que precisam de
-atenção **antes** de um deploy real (EC2), listados por prioridade.
+**Checklist a não esquecer antes de colocar o FormOps em produção.** Itens levantados durante a
+preparação da demonstração via túnel (2026-08-10/11) que ficaram provisórios só para viabilizar essa
+demo — nenhum deles deve seguir para o ambiente EC2 real sem a correção correspondente, listados por
+prioridade.
 
 ## 1. WAL archiving (PITR) desativado — `docker-compose.yml`
 
