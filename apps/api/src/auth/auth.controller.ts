@@ -67,12 +67,20 @@ export class AuthController {
   }
 
   private issueSessionCookies(response: Response, accessToken: string): void {
-    const isSecure = this.configService.get<string>('ENABLE_HTTPS') === 'true';
+    // TUNNEL_MODE (demo pontual, T171): web e api atras de tuneis
+    // *.trycloudflare.com separados sao sites distintos para o navegador
+    // (trycloudflare.com esta na Public Suffix List) — SameSite=Lax
+    // descartaria o cookie em toda chamada fetch cross-site apos o login.
+    // None exige Secure=true; nunca usar fora de demo com tunel HTTPS, pois
+    // o padrao Lax (producao/EC2) e o que protege a navegacao por link de
+    // e-mail (F14, ver Master_Technical_Specification.md).
+    const tunnelMode = this.configService.get<string>('TUNNEL_MODE') === 'true';
+    const isSecure = tunnelMode || this.configService.get<string>('ENABLE_HTTPS') === 'true';
     const csrfToken = randomBytes(32).toString('hex');
     const baseOptions: CookieOptions = {
       httpOnly: true,
       secure: isSecure,
-      sameSite: 'lax',
+      sameSite: tunnelMode ? 'none' : 'lax',
       maxAge: SESSION_COOKIE_MAX_AGE_MS,
       path: '/',
     };
