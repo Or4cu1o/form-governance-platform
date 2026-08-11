@@ -16,3 +16,6 @@ template-forms/
 apps/api/prisma/**/*.js
 apps/api/prisma/**/*.js.map
 graphify-out/cost.json
+apps/api/keys/
+.backups/
+*.pem
