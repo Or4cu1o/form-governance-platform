@@ -6,16 +6,20 @@ O FormOps é a plataforma que substitui o controle de indicadores por planilha p
 onde cada unidade preenche, revisa e aprova seus relatórios mensais em um fluxo digital, auditável
 e à prova de adulteração.
 
-Hoje, indicadores de TI são reportados manualmente, em documentos word preenchidos manualmente
-e-mail, sem rastro de quem alterou o quê, sem verificação automática de consistência e sem garantia
-de que o número final é o que foi realmente aprovado. O FormOps resolve isso de ponta a ponta.
+Hoje, os indicadores de TI são preenchidos manualmente em documentos Word, com os cálculos de
+fórmulas, percentuais e metas feitos à mão, indicador por indicador — um trabalho repetitivo,
+demorado e sujeito a erro. Os arquivos ficam em pasta compartilhada, sem rastro de quem alterou o
+quê, sem verificação automática de consistência e sem garantia de que o número final é o que foi
+realmente aprovado. O FormOps resolve isso de ponta a ponta: automatiza o cálculo, dá visibilidade
+completa dos dados e elimina o retrabalho manual.
 
 ## Como funciona, em 4 passos
 
-1. **Preencher** — cada unidade lança seus indicadores mensais em um formulário estruturado, com
-   validação automática de erros antes do envio.
+1. **Preencher** — cada unidade lança os valores dos indicadores mensais em um formulário
+   estruturado; o sistema calcula o resultado, o percentual e a conformidade com a meta
+   automaticamente, com validação de erros antes do envio.
 2. **Revisar e aprovar** — o relatório passa por um fluxo de revisão e aprovação com papéis
-   definidos (quem preenche, quem revisa, quem aprova), sem depender de e-mail ou planilha
+   definidos (quem preenche, quem revisa, quem aprova), sem depender de intervenção manual ou pasta
    compartilhada.
 3. **Selar** — ao ser concluído, o relatório recebe um **selo de integridade digital** (a mesma
    tecnologia usada em assinaturas eletrônicas seguras). Qualquer alteração posterior — mesmo de um
@@ -25,6 +29,9 @@ de que o número final é o que foi realmente aprovado. O FormOps resolve isso d
 
 ## O que a plataforma já faz hoje
 
+- **Cálculo automático de resultados** — fórmulas, percentuais e metas de cada indicador são
+  definidos uma única vez e aplicados automaticamente a cada preenchimento, eliminando o cálculo
+  manual e o erro humano que vem junto.
 - **Fluxo completo de preenchimento → revisão → aprovação**, com prazos, lembretes e controle de
   atraso por unidade.
 - **Controle de acesso por papel e por unidade** — cada pessoa só vê e edita o que é da sua alçada,
@@ -36,21 +43,27 @@ de que o número final é o que foi realmente aprovado. O FormOps resolve isso d
   documento não foi alterado — sem precisar de login nem acesso ao sistema.
 - **Trilha de auditoria completa**, incluindo quem alterou, quando e o valor anterior — nada é
   apagado, apenas o histórico é preservado permanentemente.
+- **Histórico permanente e gráfico de tendência por unidade** — nenhum relatório é apagado; o
+  acervo cresce mês a mês, sem limite, e fica disponível para acompanhar a evolução de cada
+  indicador e de cada unidade ao longo do tempo, não só o retrato do mês corrente.
 - **Painel de indicadores com pesos configuráveis**, permitindo priorizar o que mais importa para
   cada ciclo de avaliação.
-- **Camada de dados pronta para BI** (Business Intelligence), com acesso somente-leitura e
-  controlado, para dashboards executivos sem expor dados sensíveis nem colocar a operação em risco.
+- **Camada de dados pronta para BI** — alimenta o Tableau e outras ferramentas de Business
+  Intelligence de forma automática e confiável, com acesso somente-leitura e controlado, sem
+  trabalho manual de preparação de dados nem risco à operação.
 
 ## Benefícios para a organização
 
-| Hoje (planilha/e-mail) | Com o FormOps |
+| Hoje (docx/pasta compartilhada) | Com o FormOps |
 |---|---|
+| Cálculo manual de fórmulas, percentuais e metas | Cálculo automático, sempre com a mesma regra aplicada |
 | Sem rastro de quem alterou o quê | Toda alteração é registrada e nunca pode ser apagada |
 | Número final pode ser questionado | Selo digital comprova que o relatório não foi adulterado |
-| Acesso difícil de controlar e revogar | Acesso por papel e unidade, revogável na hora |
+| Acesso difícil de controlar, delegar e revogar | Acesso por papel e unidade, revogável na hora |
 | Consolidação manual, sujeita a erro | Validação automática antes do envio |
 | Auditoria é um esforço à parte | Auditoria é nativa — está sempre disponível, sem trabalho extra |
 | Evidências soltas em e-mail/drive | Evidências centralizadas, verificadas e com retenção controlada |
+| Histórico se perde ou fica disperso em pastas | Histórico permanente, pronto para análise de tendência de longo prazo |
 
 ## O que isso viabiliza para a diretoria
 
@@ -62,9 +75,19 @@ de que o número final é o que foi realmente aprovado. O FormOps resolve isso d
   pessoas específicas para "saber onde está" cada informação.
 - **Visão executiva sem abrir mão de segurança** — dashboards e relatórios de BI alimentados
   diretamente pela plataforma, com controle de acesso mantido.
+- **Visão de longo prazo para decisão estratégica** — com histórico permanente e tendência por
+  unidade, a diretoria enxerga a evolução ao longo de anos, não só o retrato do mês.
+- **Evolução mensurável das unidades hospitalares** — dados estruturados, auditáveis e com
+  histórico contínuo são exatamente o tipo de maturidade de governança de dados que certificações
+  internacionais de gestão hospitalar, como a HIMSS, avaliam. A plataforma vira evidência concreta
+  desse avanço, não apenas um sistema interno de controle.
 
 ## Próximos passos
 
 A demonstração de hoje roda em ambiente de teste, para validação com a diretoria antes da decisão
 de seguir para produção. O próximo passo, uma vez aprovado, é o deploy em ambiente definitivo
 (infraestrutura em nuvem dedicada), com os mesmos controles de segurança já validados aqui.
+
+Um passo futuro já mapeado é a coleta automática de indicadores diretamente das ferramentas de
+monitoramento de rede, segurança e infraestrutura — reduzindo ainda mais a digitação manual, sem
+substituir o controle humano, apenas o trabalho repetitivo.
