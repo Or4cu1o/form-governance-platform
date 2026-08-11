@@ -10,16 +10,17 @@ services:
     # exige que nenhum segmento fique represado por mais tempo que isso;
     # archive_timeout forca o flush mesmo sob baixo volume de escrita.
     # Procedimento completo de backup/restauracao em docs/backup-restore.md.
+    # DEMO: archive_mode desativado temporariamente — o volume formops_wal_archive
+    # e criado root:root e a imagem oficial so ajusta dono de /var/lib/postgresql/data,
+    # entao archive_command falhava com "Permission denied" a cada 60s. Reativar
+    # com um passo de chown (init container ou entrypoint proprio) antes de um
+    # deploy real com PITR.
     command:
       - postgres
       - -c
       - wal_level=replica
       - -c
-      - archive_mode=on
-      - -c
-      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
-      - -c
-      - archive_timeout=300
+      - archive_mode=off
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -68,12 +69,28 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    # T164/demo — env_file repassa o .env inteiro (JWT_SECRET, SEALING_*,
+    # EVIDENCE_RESOLVER_HMAC_SECRET, S3_BUCKET_*, CORS_ORIGIN,
+    # INITIAL_ADMIN_*, APP_DB_PASSWORD/TABLEAU_RO_DB_PASSWORD — os dois
+    # ultimos exigidos pelos passos de provisionamento do
+    # docker-entrypoint.sh, nao so pela interpolacao abaixo). O bloco
+    # `environment` continua vencendo para as poucas chaves que precisam do
+    # valor especifico da rede Docker (nome de host do servico, nao
+    # localhost).
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       APP_DATABASE_URL: postgresql://formops_app:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       S3_ENDPOINT: http://minio:9000
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
+      # main.ts escuta em API_PORT (7442 no .env, usado pelo fluxo nativo e
+      # pelo tunel) — dentro do container isso precisa ser fixo em 3000 para
+      # bater com o EXPOSE do Dockerfile e o mapeamento de porta abaixo.
+      API_PORT: 3000
+    volumes:
+      - ./apps/api/keys:/workspace/apps/api/keys:ro
     ports:
       - "${API_PORT:-3000}:3000"
     depends_on:
@@ -90,10 +107,13 @@ services:
       dockerfile: apps/web/Dockerfile
       target: dev
     restart: unless-stopped
-    environment:
-      VITE_API_URL: http://localhost:${API_PORT:-3000}
+    # vite.config.ts le o .env da raiz direto do disco (nao via process.env
+    # — evita o loadEnv() do Vite, que sobrescreveria NODE_ENV), entao
+    # VITE_API_URL/WEB_PORT so chegam ao dev server via este mount.
+    volumes:
+      - ./.env:/workspace/.env:ro
     ports:
-      - "${WEB_PORT:-3001}:3001"
+      - "${WEB_PORT:-3001}:${WEB_PORT:-3001}"
     depends_on:
       - api
 

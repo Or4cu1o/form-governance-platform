@@ -12,13 +12,18 @@ npm run provision:tableau-ro
 
 if [ "$SEED_ON_START" = "true" ]; then
   echo "[entrypoint] SEED_ON_START=true — rodando seed core..."
-  node dist/prisma/seed.js
+  npm run seed
 fi
 
 if [ "$SEED_PROPRIETARY_FORMS" = "true" ]; then
   echo "[entrypoint] SEED_PROPRIETARY_FORMS=true — rodando seeds N1/N3..."
-  node dist/prisma/seed-proprietary/seed-n1.js || echo "[entrypoint] seed N1 ainda nao implementado (Fase 11)"
-  node dist/prisma/seed-proprietary/seed-n3.js || echo "[entrypoint] seed N3 ainda nao implementado (Fase 11)"
+  npm run seed:n1 || echo "[entrypoint] seed N1 ainda nao implementado (Fase 11)"
+  npm run seed:n3 || echo "[entrypoint] seed N3 ainda nao implementado (Fase 11)"
+fi
+
+if [ "$SEED_DEMO_POP" = "true" ]; then
+  echo "[entrypoint] SEED_DEMO_POP=true — rodando seed de populacao demo..."
+  npm run seed:demo
 fi
 
 echo "[entrypoint] iniciando aplicacao..."
