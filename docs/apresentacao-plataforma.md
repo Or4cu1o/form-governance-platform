@@ -6,7 +6,7 @@ O FormOps é a plataforma que substitui o controle de indicadores por planilha p
 onde cada unidade preenche, revisa e aprova seus relatórios mensais em um fluxo digital, auditável
 e à prova de adulteração.
 
-Hoje, indicadores de TI (e de outras áreas) são reportados manualmente, em planilhas espalhadas por
+Hoje, indicadores de TI são reportados manualmente, em documentos word preenchidos manualmente
 e-mail, sem rastro de quem alterou o quê, sem verificação automática de consistência e sem garantia
 de que o número final é o que foi realmente aprovado. O FormOps resolve isso de ponta a ponta.
 
