@@ -127,5 +127,5 @@ custo de licenciamento de software — toda a base tecnológica usada é de cód
 
 **Desenvolvimento:** a construção da plataforma usou o Claude Code (assistente de IA para
 desenvolvimento de software), pago com recursos próprios, na assinatura Pro, no limite da cota. O
-custo total rastreado em todas as sessões de trabalho deste projeto, do início até agora, soma
-pouco mais de **US$ 500**.
+custo total rastreado em todas as sessões de trabalho deste projeto, do início até agora, algo em
+torno de R$ 300,00 reais em assinatura e creditos.
